@@ -193,6 +193,23 @@ function appendEvent(type, channelId, authorId, content, agentPhase, extra) {
   } catch {}
 }
 
+// ❌-ROOT-CAUSE-TRACE (2026-06-16): capture a stack trace whenever ANY ❌ reaction is
+// added, so the exact call site of the spurious red-X is recorded. Diagnostic only —
+// remove once the root cause is confirmed and fixed.
+try {
+  const { Message: _DMessage } = require('discord.js');
+  const _origReact = _DMessage.prototype.react;
+  _DMessage.prototype.react = function (emoji) {
+    if (emoji === '❌') {
+      const _stack = new Error().stack.split('\n').slice(2, 10).map(s => s.trim()).join('  <-  ');
+      console.error(`[X-TRACE] ❌ on msg ${this.id} ch ${this.channelId} :: ${_stack}`);
+      try { appendEvent('x_react_trace', this.channelId, null, null, null, { msgId: this.id, stack: _stack }); } catch {}
+    }
+    return _origReact.apply(this, arguments);
+  };
+  console.log('[X-TRACE] ❌ reaction tracer installed');
+} catch (e) { console.error('[X-TRACE] install failed:', e.message); }
+
 // ─── EVENT STREAM ROTATION ────────────────────────────────────────────────
 // Moves entries older than 7 days to event-stream-archive.jsonl when main file
 // exceeds EVENT_STREAM_MAX_BYTES. Called on startup and daily.
@@ -2927,7 +2944,7 @@ function buildTourSteps(botName) {
     },
     {
       title: '💬 How to give instructions',
-      description: `Just type plain English — no commands, no special syntax needed.\n\nFor example: *"Track the price of these 3 stocks and alert me on big moves"* or *"Summarize my emails every morning."*\n\n${name} asks clarifying questions when it needs them.`
+      description: `Just type plain English — no special syntax needed.\n\nFor example: *"Track the price of these 3 stocks and alert me on big moves"* or *"Summarize my emails every morning."*\n\nA few keywords also work as shortcuts: **pause**, **resume**, **pause 2h**. ${name} asks clarifying questions when it needs them.`
     },
     {
       title: '⏸️ Emergency controls',

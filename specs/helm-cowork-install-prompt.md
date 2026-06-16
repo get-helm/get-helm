@@ -285,7 +285,7 @@ Run silently:
 ```bash
 # Write collected config and run headless setup
 cat ~/helm-workspace/setup-config.txt >> ~/helm-workspace/CONFIG.md 2>/dev/null || true
-cd ~/helm-workspace && bash setup-headless.sh 2>/dev/null
+cd ~/helm/marvin-bot && bash setup-headless.sh 2>/dev/null
 ```
 
 Narrate progress:
@@ -323,7 +323,7 @@ pgrep -f "node.*bot.js" >/dev/null && echo "RUNNING" || echo "NOT_RUNNING"
 If RUNNING: "It's running but might take a moment to show up. Give it 30 more seconds and check again."
 If NOT_RUNNING: "Something stopped it from starting. Let me try restarting it."
 ```bash
-cd ~/helm-workspace && npm start &
+node ~/helm/marvin-bot/bot.js &
 ```
 "Try again — it should show up within a minute."
 ```

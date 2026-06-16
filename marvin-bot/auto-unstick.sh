@@ -42,10 +42,17 @@ except:
      [[ "$AGE" -ge 20 ]]; then
     # Check if PID is alive
     if kill -0 "$PID" 2>/dev/null; then
-      # Get CPU usage (macOS: ps -p PID -o %cpu=)
+      # Get CPU usage (macOS: ps -p PID -o %cpu=). Sample twice, 3s apart, so a
+      # healthy agent that is momentarily idle (e.g. waiting on a Claude API call)
+      # can't be killed by one unlucky reading — only a SUSTAINED ~0% counts as frozen.
       CPU=$(ps -p "$PID" -o %cpu= 2>/dev/null | tr -d ' ')
       IS_IDLE=$(awk "BEGIN { print (\"$CPU\" + 0 < 1.0) ? \"yes\" : \"no\" }" 2>/dev/null)
       if [[ "$IS_IDLE" == "yes" ]]; then
+        sleep 3
+        CPU=$(ps -p "$PID" -o %cpu= 2>/dev/null | tr -d ' ')
+        IS_IDLE=$(awk "BEGIN { print (\"$CPU\" + 0 < 1.0) ? \"yes\" : \"no\" }" 2>/dev/null)
+      fi
+      if [[ "$IS_IDLE" == "yes" ]] && kill -0 "$PID" 2>/dev/null; then
         kill "$PID" 2>/dev/null
         sleep 1
         kill -9 "$PID" 2>/dev/null

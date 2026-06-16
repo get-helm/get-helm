@@ -81,15 +81,13 @@ Node.js isn't installed. Run:
 ```bash
 brew install node
 ```
-Then re-run `bash helm-install.sh`.
+Then restart the Claude Desktop install prompt from Step 3 of Getting Started.
 
 ### "Permission denied" during install
 
-You need to run the wizard from your home directory, not as root:
-```bash
-cd ~
-bash helm-workspace/helm-install.sh
-```
+Claude Desktop is trying to write to a protected directory. Make sure Claude Desktop has Full Disk Access:
+**System Settings → Privacy & Security → Full Disk Access → enable Claude Desktop**
+Then restart the install prompt.
 
 ### Bot token is invalid
 

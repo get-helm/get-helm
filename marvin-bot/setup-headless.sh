@@ -34,7 +34,12 @@ DISCORD_OWNER_ID=$(get_val "DISCORD_OWNER_ID" "")
 DISCORD_TOKEN=$(get_val "DISCORD_BOT_TOKEN" "")
 GITHUB_USERNAME=$(get_val "GITHUB_USERNAME" "")
 GITHUB_TOKEN=$(get_val "GITHUB_TOKEN" "")
-TIMEZONE=$(date +%Z 2>/dev/null || echo "America/Los_Angeles")
+TIMEZONE=$(get_val "TIMEZONE" "")
+# Leave TIMEZONE unset until Stage-2 timezone question — date +%Z returns
+# abbreviations (PST/EST) which break Intl.DateTimeFormat; IANA name needed
+if [[ -z "$TIMEZONE" ]]; then
+  TIMEZONE="America/Los_Angeles"
+fi
 
 log "Configuring HELM for: $AGENT_NAME / $USER_NAME"
 

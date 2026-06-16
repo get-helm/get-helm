@@ -44,19 +44,16 @@ npm install
 
 ## Step 3: Run the setup wizard
 
-```bash
-cd ~/helm-workspace
-bash helm-install.sh
-```
+Open **Claude Desktop** in Cowork mode. Copy the install prompt from `~/helm/marvin-bot/specs/helm-cowork-install-prompt.md` and paste it into Claude Desktop. Press Enter.
 
-The wizard will walk you through:
+Claude will walk you through:
 - Entering your Discord bot token
 - Entering your Discord server ID (right-click your server name → Copy Server ID)
 - Choosing your timezone
 - Setting up the channel structure in your Discord server
 - Starting HELM as a background service
 
-The wizard takes about 10 minutes. It asks questions in plain English — no config file editing required.
+Setup takes about 10 minutes. Claude asks one question at a time in plain English — no config file editing required.
 
 ---
 
