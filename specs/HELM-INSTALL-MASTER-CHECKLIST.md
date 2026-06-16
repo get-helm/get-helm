@@ -338,7 +338,15 @@ Every piece that must be built, verified, and tested before beta. Status is as o
 - [x] **F5** — bot.js uses `process.env` or config files for all credentials *(Verified 2026-06-15)*
 
 ### Category G: The Gate (most important)
-- [ ] **G1** — 🔴 HELM team has installed from the published `get-helm/get-helm` repo on a near-clean Mac, following the Phase-1 → Phase-2 → Discord flow exactly as a new user would, and reached a working Discord conversation end-to-end. **THIS HAS NEVER BEEN DONE. Must happen before any external beta.**
+- [ ] **G1** — 🔴 Validated by the next real beta install itself ({{USER_JERRY}} 2026-06-16): a near-clean-Mac dry run cannot be simulated here, so G1 is proven by the beta tester following Phase-1 → Phase-2 → Discord end-to-end. **The behavior gaps below (D5/D9/C24/G-E) must land BEFORE that beta so the install isn't embarrassing again.**
+
+### Remaining beta-blocking BUILDS — queued for engineer 2026-06-16
+These are P5.1 decisions locked in this doc but NOT yet implemented in bot.js (verified via grep 2026-06-16). Full spec: `specs/BETA-BLOCKERS-ONBOARDING-BEHAVIOR.md`.
+- [ ] **ONBOARD-STAGE12-FLOW-001** — Stage-1 (3-tap) + Stage-2 pref flow (D5/C22/C25). NOT in bot.js — prefs only handled ad-hoc by help agent today.
+- [ ] **ONBOARD-RESUME-001** — Onboarding resume via ONBOARDING_STEP (D9). No ONBOARDING_STEP in bot.js.
+- [ ] **ONBOARD-CONNECTOR-BRIEFING-001** — Connector provider-ask (no Gmail assumption) + in-flow first briefing (C24/G-E). Not built.
+- [ ] **ONBOARD-ENV-WORDING-001** — Replace "Vault" credential promise with honest `~/helm/.env` wording (G-C).
+- [ ] **(also queued separately)** Windows auto-start (G-F) + Phase-2 CLI-runner note (G-H) — see BLOCK-5/BLOCK-6.
 
 ---
 
@@ -412,10 +420,10 @@ These are verified issues found on 2026-06-15. **{{USER_JERRY}}'s decisions are 
 | `get-helm/get-helm` | Public | Distribution repo (code + templates) | — | KEEP — public front door |
 | `get-helm/get-helm.github.io` | Public | Landing page | — | KEEP — landing only |
 
-**Target end state:** {{USER_GITHUB}} holds **2 private repos** (Core HELM sandbox + personal info backup, both stay private — locked 2026-06-14). get-helm holds **2 public repos** (code + landing).
-**PAT location (corrected):** the live `ghp_` token is embedded in **`~/marvin-bot/.git/config`** remote URL ({{USER_GITHUB}}/marvin-bot.git) — NOT in `~/.env`. Revoke via github.com/settings/tokens. After revoke, marvin-bot's auto-push needs its credential re-set to the vault PAT (no token in URL).
+**Target end state:** {{USER_GITHUB}} holds **2 private repos** (`marvin-bot` = Core HELM sandbox + `helm-config` = personal info backup, both stay private — locked 2026-06-14; `helm-config` confirmed as the active backup target in helm-publish.sh). get-helm holds **2 public repos** (code + landing).
+**PAT location (corrected):** the live `ghp_` token was embedded in **`~/marvin-bot/.git/config`** remote URL ({{USER_GITHUB}}/marvin-bot.git) — NOT in `~/.env`. ✅ {{USER_JERRY}} revoked the old token + created a new one (vault "Github {{USER_GITHUB}} PAT", 2026-06-16). ⚠️ The old {{USER_GITHUB}} token in `~/marvin-bot/.env` (backup-publish target) is now REVOKED — backup publishing to {{USER_GITHUB}}/helm-config will fail until the new PAT is placed in `~/marvin-bot/.env`. The get-helm publish token (vault) is unaffected and works.
 **Git-history PII:** ✅ Choice B — start get-helm/get-helm from scratch ({{USER_JERRY}} 2026-06-16).
-**Status:** 🔴 Deletions are irreversible + external — {{USER_JERRY}} executes in GitHub web UI (no gh CLI on this machine). One open confirm: is `{{USER_GITHUB}}/helm` or `helm-config` the canonical personal backup?
+**Status (2026-06-16):** Stale repos to delete: `{{USER_GITHUB}}/helm-docs` (content already backed up into get-helm/backups/repo-cleanup-20260615), `{{USER_GITHUB}}/helm`, `{{USER_GITHUB}}/platform-config`. ⛔ Deletion attempted via API and BLOCKED: the new "Github {{USER_GITHUB}} PAT" is a fine-grained token WITHOUT "Administration: write" permission (403 "Resource not accessible"). To unblock: either (a) edit the token at github.com/settings/personal-access-tokens to grant **Administration → Read and write** on **All repositories**, then HELM deletes them automatically; or (b) {{USER_JERRY}} deletes the 3 in the web UI (repo → Settings → bottom → Delete). Both stale + git-history-scrub deletions are irreversible.
 
 ---
 

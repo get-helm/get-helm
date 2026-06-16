@@ -103,6 +103,7 @@ const MAX_ATTACHMENT_BYTES = 100 * 1024;
 const MAX_CONCURRENT_CLAUDE = 5;
 const MAX_PARALLEL_AGENTS = 3; // Max simultaneous agents per conversational channel (threaded)
 const CHANNEL_STATE_DIR = path.join(config.WORKDIR, 'channel-state');
+const ONBOARDING_STATE_PATH = path.join(config.WORKDIR, 'system', 'onboarding-state.json');
 const RECOVERY_PINNED_FLAG = path.join(config.WORKDIR, 'channel-state', 'recovery-pinned.flag');
 const TROUBLESHOOTING_PINNED_FLAG = path.join(config.WORKDIR, 'channel-state', 'troubleshooting-pinned.flag');
 const ENGINEER_CHANNEL = config.ENGINEER_CHANNEL; // pap-audit — engineer runs are silent audit-log entries
@@ -2916,6 +2917,92 @@ function buildTourSteps(botName) {
   ];
 }
 
+// ─── ONBOARD-STAGE12-FLOW-001 + ONBOARD-RESUME-001 ─────────────────────────
+// Stage-1 (3 taps): VERBOSITY, DISPLAY_MODE, PUSHBACK_STYLE
+// Stage-2 (5 more): tone, quiet hours, proactive cadence, usage alert, date/time/week
+// ONBOARDING_STEP persisted in CONFIG.md; resume on "onboarding" keyword.
+
+function _getConfigRaw() {
+  const cfgPath = path.join(config.WORKDIR, 'CONFIG.md');
+  return fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf8') : '';
+}
+function getConfigValue(key) {
+  const m = _getConfigRaw().match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
+  return m ? m[1].trim() : null;
+}
+function setConfigValue(key, value) {
+  const cfgPath = path.join(config.WORKDIR, 'CONFIG.md');
+  const cfg = _getConfigRaw();
+  const regex = new RegExp(`^${key}:.*$`, 'm');
+  if (regex.test(cfg)) {
+    fs.writeFileSync(cfgPath, cfg.replace(regex, `${key}: ${value}`));
+  } else {
+    fs.appendFileSync(cfgPath, `\n${key}: ${value}`);
+  }
+}
+function isOnboardingComplete() { return getConfigValue('ONBOARDING_COMPLETED') === 'true'; }
+function getOnboardingStep()    { return getConfigValue('ONBOARDING_STEP') || null; }
+function setOnboardingStep(s)   { setConfigValue('ONBOARDING_STEP', s); }
+
+const ONBOARDING_STEPS = {
+  stage1_q1:       { text: 'When I have something to tell you, how much detail do you want?', buttons: [{ label: 'Just the highlights — keep it short', id: 'onboard_q1_highlights' }, { label: 'Give me the full picture — more is fine', id: 'onboard_q1_fullpicture' }] },
+  stage1_q2:       { text: 'How do you want messages to look?', buttons: [{ label: 'Dark mode', id: 'onboard_q2_dark' }, { label: 'Light mode', id: 'onboard_q2_light' }] },
+  stage1_q3:       { text: 'When I think I can improve your idea, how should I tell you?', buttons: [{ label: 'Be direct — just say it', id: 'onboard_q3_direct' }, { label: 'Blend it in — mix with the idea', id: 'onboard_q3_blend' }, { label: 'Be subtle — hint at it', id: 'onboard_q3_subtle' }] },
+  stage2_s2a:      { text: 'How should I sound when we talk?', buttons: [{ label: "Casual — like we're texting", id: 'onboard_s2a_casual' }, { label: 'Professional — clear and structured', id: 'onboard_s2a_professional' }] },
+  stage2_s2b:      { text: "Are there times you don't want me sending notifications?", buttons: [{ label: 'Yes — quiet 10pm–7am', id: 'onboard_s2b_default' }, { label: 'No — notify me anytime', id: 'onboard_s2b_no' }] },
+  stage2_s2c:      { text: 'When I notice something worth telling you, how often do you want to hear?', buttons: [{ label: 'Often — tell me everything', id: 'onboard_s2c_often' }, { label: 'Daily summary — batch it up', id: 'onboard_s2c_daily' }, { label: "Only if it's urgent", id: 'onboard_s2c_urgent' }] },
+  stage2_s2d:      { text: "I'll warn you before you hit Claude's weekly limit. Alert me at:", buttons: [{ label: '70%', id: 'onboard_s2d_70' }, { label: '85%', id: 'onboard_s2d_85' }, { label: '95%', id: 'onboard_s2d_95' }] },
+  stage2_s2e_date: { text: 'Date format:', buttons: [{ label: 'MM/DD/YYYY (US)', id: 'onboard_s2e_date_mdy' }, { label: 'DD/MM/YYYY (EU)', id: 'onboard_s2e_date_dmy' }] },
+  stage2_s2e_time: { text: 'Time format:', buttons: [{ label: '12-hour (2:30 PM)', id: 'onboard_s2e_time_12' }, { label: '24-hour (14:30)', id: 'onboard_s2e_time_24' }] },
+  stage2_s2e_week: { text: 'Week starts on:', buttons: [{ label: 'Monday', id: 'onboard_s2e_week_mon' }, { label: 'Sunday', id: 'onboard_s2e_week_sun' }] }
+};
+
+async function sendOnboardingQuestion(channel, step) {
+  const q = ONBOARDING_STEPS[step];
+  if (!q) return;
+  try {
+    await channel.send({
+      content: q.text,
+      components: [{ type: 1, components: q.buttons.map(b => ({ type: 2, style: 1, label: b.label, custom_id: b.id })) }]
+    });
+  } catch (e) { console.error(`[onboarding] step ${step} send error:`, e.message); }
+}
+
+async function handleOnboardingButton(customId, channel) {
+  const COMPLETE_MSG = "Good. That's your setup done.\n\n→ Daily briefing starts tomorrow morning at 8am\n→ Nightly backup — 1am\n→ System health check — every 6 hours\n\nHead to #general to start using me, or ask me anything now.";
+  function save(k, v, next) { setConfigValue(k, v); setOnboardingStep(next); return sendOnboardingQuestion(channel, next); }
+  const map = {
+    'onboard_q1_highlights':    () => save('VERBOSITY', 'concise', 'stage1_q2'),
+    'onboard_q1_fullpicture':   () => save('VERBOSITY', 'detailed', 'stage1_q2'),
+    'onboard_q2_dark':          () => save('DISPLAY_MODE', 'dark', 'stage1_q3'),
+    'onboard_q2_light':         () => save('DISPLAY_MODE', 'light', 'stage1_q3'),
+    'onboard_q3_direct':        () => save('PUSHBACK_STYLE', 'direct', 'stage2_s2a'),
+    'onboard_q3_blend':         () => save('PUSHBACK_STYLE', 'blend', 'stage2_s2a'),
+    'onboard_q3_subtle':        () => save('PUSHBACK_STYLE', 'subtle', 'stage2_s2a'),
+    'onboard_s2a_casual':       () => save('PREFERRED_TONE', 'casual', 'stage2_s2b'),
+    'onboard_s2a_professional': () => save('PREFERRED_TONE', 'professional', 'stage2_s2b'),
+    'onboard_s2b_default':      () => { setConfigValue('NOTIFICATION_QUIET_HOURS_START', '22:00'); setConfigValue('NOTIFICATION_QUIET_HOURS_END', '07:00'); return save('_QUIET_SET', '1', 'stage2_s2c'); },
+    'onboard_s2b_no':           () => save('NOTIFICATION_QUIET_HOURS_START', 'none', 'stage2_s2c'),
+    'onboard_s2c_often':        () => save('PROACTIVE_OUTREACH', 'often', 'stage2_s2d'),
+    'onboard_s2c_daily':        () => save('PROACTIVE_OUTREACH', 'daily', 'stage2_s2d'),
+    'onboard_s2c_urgent':       () => save('PROACTIVE_OUTREACH', 'urgent', 'stage2_s2d'),
+    'onboard_s2d_70':           () => save('USAGE_WARNING_THRESHOLD', '70', 'stage2_s2e_date'),
+    'onboard_s2d_85':           () => save('USAGE_WARNING_THRESHOLD', '85', 'stage2_s2e_date'),
+    'onboard_s2d_95':           () => save('USAGE_WARNING_THRESHOLD', '95', 'stage2_s2e_date'),
+    'onboard_s2e_date_mdy':     () => save('DATE_FORMAT', 'MM/DD/YYYY', 'stage2_s2e_time'),
+    'onboard_s2e_date_dmy':     () => save('DATE_FORMAT', 'DD/MM/YYYY', 'stage2_s2e_time'),
+    'onboard_s2e_time_12':      () => save('TIME_FORMAT', '12h', 'stage2_s2e_week'),
+    'onboard_s2e_time_24':      () => save('TIME_FORMAT', '24h', 'stage2_s2e_week'),
+    'onboard_s2e_week_mon':     async () => { setConfigValue('WEEK_STARTS_ON', 'monday'); setConfigValue('ONBOARDING_STEP', 'complete'); setConfigValue('ONBOARDING_COMPLETED', 'true'); await channel.send(COMPLETE_MSG); },
+    'onboard_s2e_week_sun':     async () => { setConfigValue('WEEK_STARTS_ON', 'sunday'); setConfigValue('ONBOARDING_STEP', 'complete'); setConfigValue('ONBOARDING_COMPLETED', 'true'); await channel.send(COMPLETE_MSG); }
+  };
+  const fn = map[customId];
+  if (!fn) return false;
+  try { await fn(); } catch (e) { console.error(`[onboarding] button ${customId} error:`, e.message); }
+  return true;
+}
+// ─── END ONBOARD-STAGE12-FLOW-001 ──────────────────────────────────────────
+
 // sendTourStep: post tour step N (0-based) to a channel, with a Next → button unless it's the last step.
 // TOUR-CREATED-CHANNELS-001: rebuilds steps fresh each time (reads channels.json for dynamic list).
 // On last step: posts first-workspace kickoff prompt to #new-workspace.
@@ -2959,6 +3046,7 @@ async function sendTourStep(channel, stepIndex) {
     } catch (e) {
       console.error('[tour] workspace-handoff error:', e.message);
     }
+    // ONBOARD-STAGE12-FLOW-001: Stage-1 fires on first user message (not here); see MESSAGE_CREATE intercept.
   }
 
   return result;
@@ -2982,6 +3070,10 @@ async function startTourForNewMember(userId) {
     }
   }
 }
+
+// Note: The onboarding preference flow (Stage-1 + Stage-2) is implemented above at
+// ONBOARD-STAGE12-FLOW-001 (sendOnboardingQuestion, handleOnboardingButton, ONBOARDING_STEPS).
+// State persists in CONFIG.md as ONBOARDING_STEP / ONBOARDING_COMPLETED.
 
 // ─── FEEDBACK-CHANNEL-001: TYPE-TO-SEND FEEDBACK ──────────────────────────
 // Any non-bot message in #helm-feedback is deleted immediately and replaced with a
@@ -5236,6 +5328,30 @@ client.on('raw', async (event) => {
       return;
     }
 
+    // ─── ONBOARD-STAGE12-FLOW-001: onboarding preference buttons ────────────
+    if (customId.startsWith('onboard_')) {
+      // ACK immediately (type 6 = deferred update — removes Discord loading state)
+      const onbAckBody = JSON.stringify({ type: 6 });
+      const onbAckOpts = {
+        hostname: 'discord.com',
+        path: `/api/v10/interactions/${d.id}/${d.token}/callback`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(onbAckBody) }
+      };
+      await new Promise((resolve) => {
+        const req = https.request(onbAckOpts, (res) => { res.resume(); res.on('end', resolve); });
+        req.on('error', () => resolve());
+        req.write(onbAckBody); req.end();
+      });
+      (async () => {
+        try {
+          const onbCh = client.channels.cache.get(d.channel_id) || await client.channels.fetch(d.channel_id);
+          await handleOnboardingButton(customId, onbCh);
+        } catch (e) { console.error('[onboarding] button error:', e.message); }
+      })();
+      return;
+    }
+
     // ─── FEEDBACK-CHANNEL-001: Send Feedback / Cancel buttons ───────────────
     if (customId === 'feedback_send' || customId === 'feedback_cancel') {
       // ACK immediately (type 6 = deferred update)
@@ -6883,6 +6999,20 @@ client.on('raw', async (event) => {
   } catch {}
   // ── End emergency pause/resume ────────────────────────────────────────────
 
+  // ── ONBOARD-RESUME-001: "onboarding" keyword resumes Stage-1/2 flow ────────
+  // Note: also handled by the ONBOARD-STAGE12-FLOW-001 intercept below; this is early-exit for speed.
+  if (normalizedContent === 'onboarding' && !isOnboardingComplete()) {
+    try {
+      const ch = await client.channels.fetch(channelId);
+      const step = getOnboardingStep() || 'stage1_q1';
+      if (!getOnboardingStep()) setOnboardingStep('stage1_q1');
+      await ch.send('↩️ Resuming your setup from where we left off...');
+      await sendOnboardingQuestion(ch, step);
+    } catch (e) { console.error('[onboarding-resume] error:', e.message); }
+    if (pendingMessageLock.has(channelId)) pendingMessageLock.delete(channelId);
+    return;
+  }
+
   // ── /model-check — show current model routing status ─────────────────────
   if (normalizedContent === '/model-check') {
     try {
@@ -6979,6 +7109,38 @@ client.on('raw', async (event) => {
       } catch (e) { console.error('[thread] parent channel fetch error:', e.message); }
     }
   }
+
+  // ─── ONBOARD-STAGE12-FLOW-001: intercept messages for onboarding flow ──────
+  // Skip if onboarding is already complete, or if this is a DM / no guild
+  if (!isOnboardingComplete() && data.guild_id && channel) {
+    const trimmedContent = (content || '').trim().toLowerCase();
+    const currentStep = getOnboardingStep();
+    if (trimmedContent === 'onboarding') {
+      // Resume from current step (ONBOARD-RESUME-001)
+      const resumeStep = currentStep || 'stage1_q1';
+      if (!currentStep) setOnboardingStep('stage1_q1');
+      await sendOnboardingQuestion(channel, resumeStep);
+      try { if (message) await message.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
+      pendingMessageLock.delete(channelId);
+      return;
+    }
+    if (!currentStep) {
+      // First user message — start Stage-1
+      setOnboardingStep('stage1_q1');
+      await sendOnboardingQuestion(channel, 'stage1_q1');
+      try { if (message) await message.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
+      pendingMessageLock.delete(channelId);
+      return;
+    }
+    // Onboarding in progress but user sent a non-button message — remind and re-show current step
+    if (currentStep !== 'complete') {
+      await sendOnboardingQuestion(channel, currentStep);
+      try { if (message) await message.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
+      pendingMessageLock.delete(channelId);
+      return;
+    }
+  }
+  // ─── END ONBOARD-STAGE12-FLOW-001 ─────────────────────────────────────────
 
   // PM mention routing: @pm or @product-manager in #pap-improvements
   const isPmMention =

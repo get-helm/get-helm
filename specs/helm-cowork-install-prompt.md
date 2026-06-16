@@ -86,9 +86,11 @@ STEP A2 — SHOW WHERE WE'RE HEADED:
 Here's where we're headed — this is what your Discord will look like in about 15 minutes:
 
 > Good morning [USER_PREFERRED_NAME] — here's what's on today:
-> 📅 3 events on your calendar. 📧 2 emails waiting. Everything else is clear.
+> 📅 Connect your calendar to see today's events.
+> 📧 Connect your email to see messages.
+> Everything else is clear.
 
-That message, every morning, in your own Discord server.
+That message, every morning, in your own Discord server. Once you connect your calendar and email (takes 5 min after setup), it fills in with real data.
 
 Next: I need to create [AGENT_NAME]'s Discord account. This is the only step where you click through a website — I'll walk you through every single screen."
 
@@ -159,14 +161,12 @@ A long string of letters and numbers will appear. This is [AGENT_NAME]'s passwor
 
 [After they paste the token:]
 
-SAVE token securely:
+SAVE token to local config (chmod 600 — no 1Password required for new users):
 ```bash
-# Write to HELM Vault
-op item create --category=login --title="[AGENT_NAME] Discord Bot Token" --vault="HELM Vault" "password=[TOKEN]" 2>/dev/null || \
-echo "DISCORD_BOT_TOKEN=[TOKEN]" >> ~/helm-workspace/setup-config.txt
+echo "DISCORD_BOT_TOKEN=[TOKEN]" >> ~/helm-workspace/setup-config.txt && chmod 600 ~/helm-workspace/setup-config.txt
 ```
 
-Say: "Got it — saving that securely now. You won't need to look at it again.
+Say: "Got it — saved to your local config file. It's stored on your Mac and only your user account can read it. You won't need to look at it again.
 
 Now: in the left sidebar, click 'OAuth2', then in the submenu that appears, click 'URL Generator.'
 

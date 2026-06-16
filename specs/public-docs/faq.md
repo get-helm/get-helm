@@ -71,7 +71,7 @@ Your messages are processed by Claude (Anthropic's AI) to generate responses. An
 No. Your Discord server is private and you control who joins. Your web dashboards are password-protected. Your Mac is on your local network.
 
 **Where are my credentials stored?**
-HELM uses 1Password (via the `op` CLI) as its credential vault. API keys and tokens are stored in your personal 1Password vault, not in config files.
+Credentials (Discord token, GitHub PAT) are stored in `~/helm/marvin-bot/.env` on your Mac with file permissions set to 600 — only your user account can read them. No cloud service or third-party password manager is required. Advanced users can optionally add 1Password integration.
 
 ---
 

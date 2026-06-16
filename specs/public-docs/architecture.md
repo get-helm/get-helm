@@ -147,7 +147,7 @@ This protocol makes agent behavior predictable and lets the bot detect when agen
 | System events | event-stream.jsonl | JSONL append-only |
 | Agent config | ~/.claude/agents/*.md | Markdown |
 | Workspace files | workspaces/[name]/ | Mixed |
-| Credentials | 1Password PAP Vault | Via op CLI |
+| Credentials | ~/helm/marvin-bot/.env | chmod 600, file permissions |
 | Logs | system/helm-audit.log | Plaintext append |
 
 ---
@@ -155,7 +155,7 @@ This protocol makes agent behavior predictable and lets the bot detect when agen
 ## Security Model
 
 - **Local only** — Bot.js runs on your Mac, on your network
-- **Credentials in vault** — No secrets in config files; all via 1Password `op` CLI
+- **Credentials in .env** — Secrets stored in `~/helm/marvin-bot/.env` (chmod 600); file-permission protected
 - **Sandboxed agents** — Each agent runs as a CLI subprocess; cannot access other processes
 - **Discord auth** — Bot token scoped to your server; no cross-server access
 - **Web dashboards** — Password-protected via nginx auth; credentials in vault

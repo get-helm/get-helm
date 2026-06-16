@@ -209,16 +209,31 @@ Save as SECOND_BRAIN_CHANNELS.
 
 J2 — Email (optional):
 Say: "Do you want to include your email in the second brain?
-[Yes — add Gmail] [No thanks, just Discord]"
+[Yes] [No thanks, just Discord]"
 If yes:
-  Ask: "Your Gmail address?"
-  Wait for GMAIL_ADDRESS.
-  Say: "You'll need a Gmail App Password — not your main password. Here's how:
-  1. Go to myaccount.google.com/security
-  2. Scroll to '2-Step Verification' → enable it if not already on
-  3. Scroll to 'App passwords' → create one → select Mail → copy the 16-character code
-  Paste it here."
-  Wait for GMAIL_APP_PASSWORD. Save to ~/.helm-gmail-password (chmod 600).
+  Ask: "Which email provider do you use?"
+  [Gmail] [Outlook / Microsoft 365] [Other]
+  
+  If Gmail:
+    Ask: "Your Gmail address?"
+    Wait for GMAIL_ADDRESS.
+    Say: "You'll need a Gmail App Password — not your main password. Here's how:
+    1. Go to myaccount.google.com/security
+    2. Scroll to '2-Step Verification' → enable it if not already on
+    3. Scroll to 'App passwords' → create one → select Mail → copy the 16-character code
+    Paste it here."
+    Wait for GMAIL_APP_PASSWORD. Save to ~/.helm-gmail-password (chmod 600).
+  
+  If Outlook / Microsoft 365:
+    Ask: "Your Outlook or Microsoft 365 email address?"
+    Wait for OUTLOOK_ADDRESS.
+    Say: "I'll set up Outlook email access. You'll need an app password from your Microsoft account. Go to account.microsoft.com/security → Advanced security options → App passwords → create one and paste it here."
+    Wait for OUTLOOK_APP_PASSWORD. Save to ~/.helm-outlook-password (chmod 600).
+    Save OUTLOOK_ADDRESS.
+  
+  If Other:
+    Say: "I'll note that for later — I'll add [provider] support as a next step after setup. For now I'll skip email and you can add it when support is ready."
+    EMAIL_ENABLED=false
 
 Run second brain setup:
 mkdir -p ~/helm-workspace/second-brain
@@ -262,7 +277,9 @@ If lifeline bot skipped: save to deferred items.
 
 Say: "[AGENT_NAME] is running.
 
-Go to your Discord server — your welcome message is waiting there. I'll be here if you need help."
+One last step: move back to your daily machine or phone — HELM lives in Discord, so that's where you'll use it from. Open Discord there, find your new HELM server, and your welcome message will be waiting.
+
+You'll control everything from Discord from now on. This machine runs quietly in the background. I'll be here if you need help setting anything else up."
 
 ---END HELM INSTALL PROMPT---
 
