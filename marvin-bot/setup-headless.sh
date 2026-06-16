@@ -86,6 +86,7 @@ fi
 
 MARVIN_ENV="$HELM_DIR/marvin-bot/.env"
 touch "$MARVIN_ENV" 2>/dev/null || true
+chmod 600 "$MARVIN_ENV" 2>/dev/null || true
 
 write_env() {
   local key="$1" val="$2"

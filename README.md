@@ -8,7 +8,7 @@
 
 **→ [get-helm.github.io](https://get-helm.github.io)**
 
-The setup guide walks you through everything — no terminal, no technical background needed. One click copies a prompt; an AI walks you through the rest.
+The setup guide walks you through everything. One click copies a prompt; an AI walks you through the rest. (You'll run one short install script to start — Claude handles everything after that.)
 
 ---
 
