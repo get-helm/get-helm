@@ -6,7 +6,7 @@
 # Exit codes: 0 = clean, 1 = threat detected, 2 = warning (suspicious but not definitive)
 # Stdout: JSON { threats: [], level: "clean|warn|block", details: "" }
 
-OWNER_ID="457276838897516574"
+OWNER_ID="{{USER_DISCORD_USER_ID}}"
 AUTHOR_ID=""
 INPUT_FILE=""
 CONTENT=""

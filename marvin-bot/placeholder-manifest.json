@@ -179,5 +179,47 @@
     "source": "created during @HELM init",
     "required": false,
     "example": "123456789012345678"
+  },
+  "USER_CHANNEL_AGENT_BOARD": {
+    "desc": "Discord channel ID for agent board (task tracking display)",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_GENERAL": {
+    "desc": "Discord channel ID for the general channel",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_ETF_TRACKER": {
+    "desc": "Discord channel ID for the ETF tracker workspace channel",
+    "collect": "derived",
+    "source": "created by ETF tracker workspace setup",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_OPTIONS_HELPER": {
+    "desc": "Discord channel ID for the options helper workspace channel",
+    "collect": "derived",
+    "source": "created by options helper workspace setup",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_RECOVERY": {
+    "desc": "Discord channel ID for the recovery/lifeline channel",
+    "collect": "derived",
+    "source": "created during @HELM init or recovery setup",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_DISCORD_USER_ID": {
+    "desc": "Discord user ID of the HELM owner (used for owner-only commands)",
+    "collect": "onboarding",
+    "question": "Your Discord user ID (right-click your username in Discord → Copy User ID):",
+    "required": true,
+    "example": "123456789012345678"
   }
 }

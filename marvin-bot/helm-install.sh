@@ -266,7 +266,7 @@ write_config
 # ─── PHASE 6: CREATE DISCORD CHANNELS ────────────────────────────────────────
 create_discord_channels() {
   local channels=(
-    "general:1498823989324419094:general channel"
+    "general:{{USER_CHANNEL_GENERAL}}:general channel"
     "helm-improvements:helm-improvements:proposals and improvements"
     "helm-audit:helm-audit:system audit log"
     "helm-status:helm-status:status updates"

@@ -15,14 +15,14 @@ DAYS = 7
 TRIGGER_WINDOW_SEC = 120  # 2 min window to classify spawn as {{USER_JERRY}}-triggered
 
 CHANNEL_NAMES = {
-    "1498823989324419094": "#general",
+    "{{USER_CHANNEL_GENERAL}}": "#general",
     "1499287733007421611": "#new-workspace",
     "1500203712692486326": "#capture",
     "{{USER_CHANNEL_HELM_STATUS}}": "#pap-status",
-    "1501236121399722024": "#etf-tracker",
+    "{{USER_CHANNEL_ETF_TRACKER}}": "#etf-tracker",
     "1501656066340032776": "#pap-improvements-archived",
     "{{USER_CHANNEL_HELM_AUDIT}}": "#pap-audit",
-    "1502485100976144434": "#options-helper",
+    "{{USER_CHANNEL_OPTIONS_HELPER}}": "#options-helper",
     "1504126943669260403": "#daily-brief",
     "1504160847134720050": "#financial-review",
     "1504684387852222465": "#japan-trip",

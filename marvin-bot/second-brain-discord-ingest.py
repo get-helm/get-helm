@@ -36,7 +36,7 @@ PAP_AUDIT_CH     = "{{USER_CHANNEL_HELM_AUDIT}}"
 
 # All channels to ingest (core PAP channels + workspaces from registry)
 CORE_CHANNELS = [
-    {"id": "1498823989324419094", "name": "general"},
+    {"id": "{{USER_CHANNEL_GENERAL}}", "name": "general"},
     {"id": "1499287733007421611", "name": "capture"},
     {"id": "{{USER_CHANNEL_HELM_IMPROVEMENTS}}", "name": "pap-improvements"},
     {"id": "1501656066340032776", "name": "pap-improvements-archived"},

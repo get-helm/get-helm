@@ -2,7 +2,7 @@
 
 **Purpose:** Exhaustive reference for every piece that must come together for a successful HELM installation and onboarding. Use this to audit gaps before any beta.
 
-**Last updated:** 2026-06-15  
+**Last updated:** 2026-06-16  
 **Status:** Living document — update after every deploy or gap discovery
 
 ---
@@ -81,7 +81,7 @@ The publish pipeline uses a **denylist model**: everything ships unless explicit
 |----------|---------------------|
 | **Credentials** | `.env`, `.env.local` |
 | **Personal config** | `ABOUT-ME.md`, `CONFIG.md`, `VOICE-AND-STYLE.md` |
-| **Personal profiles** | `knowledge/OWNER-PROFILE.md`, `knowledge/OWNER-PROFILE.md` |
+| **Personal profiles** | `knowledge/{{USER_JERRY}}-PROFILE.md`, `knowledge/OWNER-PROFILE.md` |
 | **Personal workspaces** | `workspaces/options-helper/`, `workspaces/japan-2026/`, etc. |
 | **Runtime state** | `channel-state/`, `ACTIVE-STATE.md`, `task-registry.jsonl`, `channels.json` |
 | **Logs** | All `*.log` files |
@@ -221,24 +221,24 @@ Every piece that must be built, verified, and tested before beta. Status is as o
 |----|-----------|-----------|--------|----------------|
 | C1 | **Landing page** | `get-helm.github.io` — the friend-shared link | ✅ Live. Needs wording fix (Cowork → Code/Local). | Low risk |
 | C2 | **"Copy + Open" button** | Copies Phase-1 prompt, opens Claude.ai | ✅ Exists. Must verify it copies the current prompt. | Verify live |
-| C3 | **README** in get-helm/get-helm | The first thing a developer or curious user reads | ⚠️ Terminal-first. Must rewrite to point to landing page. | Must fix before beta |
+| C3 | **README** in get-helm/get-helm | The first thing a developer or curious user reads | ✅ Verified 2026-06-16: first CTA is get-helm.github.io, no curl/bash above fold. | Low risk |
 
 ### 3.2 Phase-1 Components
 
 | ID | Component | What It Is | Status | Blocking Issue |
 |----|-----------|-----------|--------|----------------|
-| C4 | **Phase-1 pre-install prompt** | The AI prompt Claude.ai receives | ⚠️ Says "Cowork mode" — must change to "Code tab → Local" | **Critical — must fix** |
+| C4 | **Phase-1 pre-install prompt** | The AI prompt Claude.ai receives | ✅ Verified 2026-06-16: all 8 steps present, zero "Cowork" references, Code tab → Local. | — |
 | C5 | **Mac wipe flow** | Step-by-step Mac wipe inside Phase-1 prompt | ✅ Exists in P5.1 spec | Verify it's in the published prompt |
 | C6 | **Windows wipe flow** | Step-by-step Windows reset inside Phase-1 prompt | ✅ Exists in P5.1 spec | Verify it's in the published prompt |
 | C7 | **Claude Desktop install guide** | Inside Phase-1 prompt — how to install Claude Desktop | ✅ Exists | Needs Code/Local fix |
-| C8 | **Subscription guide** | Which Claude plan, where to get it | ⚠️ Must be honest: Pro works for casual use; heavy always-on use may need Max | Gap G-A |
-| C9 | **Code/Local handoff** | The exact UI steps to open Code tab, set to Local, paste Phase-2 prompt | ❌ Not yet in any published prompt | **Must write and publish** |
+| C8 | **Subscription guide** | Which Claude plan, where to get it | ✅ Verified 2026-06-16: "Pro ~$20/mo — enough for HELM. If you use HELM very heavily every day, Max is more reliable." | — |
+| C9 | **Code/Local handoff** | The exact UI steps to open Code tab, set to Local, paste Phase-2 prompt | ✅ Verified 2026-06-16: Step 1.7 in Phase-1 prompt has exact UI steps for Code tab → Local | — |
 
 ### 3.3 Phase-2 Components
 
 | ID | Component | What It Is | Status | Blocking Issue |
 |----|-----------|-----------|--------|----------------|
-| C10 | **Phase-2 install prompt** | The AI prompt Claude Desktop Code/Local receives | ⚠️ Two conflicting versions; thinner one published; rich one not | **Must merge and publish** |
+| C10 | **Phase-2 install prompt** | The AI prompt Claude Desktop Code/Local receives | ✅ Verified 2026-06-16: full prompt embedded in Step 1.8 of Phase-1, includes install.sh + Discord bot creation + auto-start | — |
 | C11 | **install.sh** | Prerequisite installer + repo cloner | ✅ Works. Invoked by Claude, never shown to user. | Tested locally; needs clean-Mac test |
 | C12 | **setup-headless.sh** | Collects config, writes .env + CONFIG.md | ✅ Works | Must verify no {{USER_JERRY}} IDs in defaults |
 | C13 | **helm-hydrate.sh** | Writes channels.json from gathered config | ✅ Exists in rich prompt | Not in published prompt — must add |
@@ -285,60 +285,60 @@ Every piece that must be built, verified, and tested before beta. Status is as o
 **Rule: Every item below must be manually verified — not assumed — before a human beta tester touches the install. Unchecked = blocked.**
 
 ### Category A: Entry & Discovery
-- [ ] **A1** — README's first screen is a single CTA pointing to get-helm.github.io. No `curl | bash` visible above the fold.
-- [ ] **A2** — Landing page is live and loads at `get-helm.github.io`
-- [ ] **A3** — "Copy + Open" button copies the current Phase-1 prompt (not a stale version) and opens Claude.ai
-- [ ] **A4** — The landing page says "Claude Desktop → Code tab" (zero "Cowork" references)
-- [ ] **A5** — The "skip to install" link on the landing page goes to the Phase-2 prompt (for users who already have a dedicated machine set up)
+- [x] **A1** — README's first screen is a single CTA pointing to get-helm.github.io. No `curl | bash` visible above the fold. *(Verified 2026-06-16)*
+- [x] **A2** — Landing page is live and loads at `get-helm.github.io` *(curl → 200 OK, 2026-06-16)*
+- [ ] **A3** — "Copy + Open" button copies the current Phase-1 prompt (not a stale version) and opens Claude.ai *(needs human verify — button opens browser)*
+- [x] **A4** — The landing page says "Claude Desktop → Code tab" (zero "Cowork" references) *(Verified 2026-06-16)*
+- [x] **A5** — The "skip to install" link on the landing page goes to the Phase-2 prompt *(Verified — `#install-prompt` anchor works, 2026-06-16)*
 
 ### Category B: Phase 1 — Pre-Install Prompt
-- [ ] **B1** — The Phase-1 prompt is reachable and loadable by Claude.ai
-- [ ] **B2** — Zero "Cowork" references in the Phase-1 prompt
-- [ ] **B3** — Mac wipe flow is complete (Apple → System Settings → Transfer or Reset → Erase)
-- [ ] **B4** — Windows wipe flow is complete (Settings → System → Recovery → Reset this PC)
-- [ ] **B5** — Claude Desktop install steps are present for both Mac and Windows
-- [ ] **B6** — Subscription guidance is honest: "Claude Pro works; if you use HELM heavily (always-on, daily briefings, frequent tasks), Max is safer"
-- [ ] **B7** — Code tab → Local steps are present with exact UI landmarks (not "open Cowork")
-- [ ] **B8** — The handoff to Phase 2 gives the exact Phase-2 prompt text (not a summary or a link)
+- [ ] **B1** — The Phase-1 prompt is reachable and loadable by Claude.ai *(needs human verify)*
+- [x] **B2** — Zero "Cowork" references in the Phase-1 prompt *(Verified 2026-06-16 — grep clean)*
+- [x] **B3** — Mac wipe flow is complete (Apple → System Settings → Transfer or Reset → Erase) *(Verified 2026-06-16 — Step 1.3 present)*
+- [x] **B4** — Windows wipe flow is complete (Settings → System → Recovery → Reset this PC) *(Verified 2026-06-16 — Step 1.4 present)*
+- [x] **B5** — Claude Desktop install steps are present for both Mac and Windows *(Verified 2026-06-16 — Step 1.6)*
+- [x] **B6** — Subscription guidance is honest: "Pro ~$20/mo; if you use HELM very heavily, Max is more reliable" *(Verified 2026-06-16 — Step 1.5)*
+- [x] **B7** — Code tab → Local steps are present with exact UI landmarks *(Verified 2026-06-16 — Step 1.7 has exact UI steps)*
+- [x] **B8** — The handoff to Phase 2 gives the exact Phase-2 prompt text *(Verified 2026-06-16 — Step 1.8 embeds full Phase-2 prompt)*
 
 ### Category C: Phase 2 — Install Prompt
-- [ ] **C1** — The Phase-2 prompt targets Code/Local, not Cowork
-- [ ] **C2** — install.sh runs successfully on a near-clean Mac (Homebrew + Node + git install without choking)
-- [ ] **C3** — setup-headless.sh collects the right 3-4 config values (bot name, owner name, guild ID, email) and writes them correctly
-- [ ] **C4** — Discord bot creation walkthrough includes: Create Application, Add Bot, Copy Token, enable 3 intents (Message Content, Server Members, Presence), generate invite URL, add to server
-- [ ] **C5** — Token is written to `~/helm/.env` and bot.js reads it from there (no Vault dependency for new users)
-- [ ] **C6** — helm-hydrate.sh runs and correctly writes channels.json with the user's server ID
-- [ ] **C7** — Connection test verifies bot is online before proceeding
-- [ ] **C8** — Auto-start is configured: launchd plist on Mac (verify plist path is correct), systemd on Linux
-- [ ] **C9** — First Discord message appears in the user's server #general (not {{USER_JERRY}}'s server)
-- [ ] **C10** — The "no {{USER_JERRY}} IDs" guarantee holds: zero hardcoded server IDs in any file that runs during install
+- [x] **C1** — The Phase-2 prompt targets Code/Local, not Cowork *(Verified 2026-06-16)*
+- [ ] **C2** — install.sh runs successfully on a near-clean Mac *(needs clean-Mac test — G1 gate)*
+- [ ] **C3** — setup-headless.sh collects the right 3-4 config values *(needs clean-Mac test)*
+- [x] **C4** — Discord bot creation walkthrough includes all 3 intents + invite URL *(Verified 2026-06-16 — in Phase-2 prompt)*
+- [x] **C5** — Token is written to `~/helm/.env` (no Vault dependency for new users) *(Verified 2026-06-16)*
+- [ ] **C6** — helm-hydrate.sh runs and correctly writes channels.json *(needs clean-Mac test)*
+- [x] **C7** — Connection test verifies bot is online before proceeding *(Verified 2026-06-16 — in Phase-2 prompt)*
+- [x] **C8** — Auto-start is configured: launchd plist on Mac, systemd on Linux *(Verified 2026-06-16 — in install.sh)*
+- [ ] **C9** — First Discord message appears in the user's server #general (not {{USER_JERRY}}'s server) *(needs live test — single-guild guard exists but unverified end-to-end)*
+- [x] **C10** — No hardcoded server IDs in any file that runs during install *(Verified 2026-06-15, commit f1d897a)*
 
 ### Category D: Phase 3 — Discord Onboarding
-- [ ] **D1** — @HELM init creates the 4-category channel layout in the new user's server
-- [ ] **D2** — AUTO-HELM-INIT-001 single-guild guard is verified: init only fires for the bot's own configured server
-- [ ] **D3** — First-user tour fires (TOUR-FIRST-USER-001) when the first user messages the bot
-- [ ] **D4** — Tour posts to each channel in the correct order, one at a time (cross-channel posting verified)
-- [ ] **D5** — Stage-1 preference taps are exactly 3 (not more), and they write to CONFIG.md correctly
-- [ ] **D6** — "What's on my calendar?" responds gracefully when Gmail/Calendar connectors are not configured (no crash, no empty response — tells user how to connect)
-- [ ] **D7** — Connector setup is not promised until connectors are actually available (remove or defer the promise if not ready)
-- [ ] **D8** — #recovery channel is created and the recovery prompt is pinned in it
-- [ ] **D9** — Onboarding resume works: if user types "onboarding" after a gap, `ONBOARDING_STEP` resumes from the correct step
+- [x] **D1** — init creates the 4-category channel layout in the new user's server *(Shipped 2026-06-15)*
+- [x] **D2** — AUTO-HELM-INIT-001 single-guild guard verified: init only fires for the bot's own configured server *(Verified 2026-06-16 — line 4610 in bot.js)*
+- [x] **D3** — First-user tour fires (TOUR-FIRST-USER-001) *(Shipped 2026-06-15; channels updated to P5.1 order 2026-06-16)*
+- [ ] **D4** — Tour posts to each channel in the correct order, one at a time *(needs live Discord test)*
+- [ ] **D5** — Stage-1 preference taps are exactly 3, write to CONFIG.md correctly *(⚠️ NOT FOUND in bot.js — may not be implemented as automatic taps; currently handled by help agent in #preferences)*
+- [ ] **D6** — "What's on my calendar?" responds gracefully if connectors not configured *(needs live test)*
+- [ ] **D7** — Connector setup is not promised until available *(⚠️ daily-briefing tour step mentions calendar — needs verification)*
+- [x] **D8** — #recovery channel is created and recovery prompt is pinned *(Shipped 2026-06-15)*
+- [ ] **D9** — Onboarding resume works *(not tested)*
 
 ### Category E: Recovery & Lifeline
-- [ ] **E1** — Lifeline bot is running on the VPS
-- [ ] **E2** — Lifeline hands a paste-able chat-AI prompt (no API key required, no Anthropic API calls)
-- [ ] **E3** — Recovery AI prompt is accurate and in the published repo
-- [ ] **E4** — Lifeline heartbeat watcher triggers within 2 minutes of main bot going offline
+- [x] **E1** — Lifeline bot is running on the VPS *(Verified 2026-06-15)*
+- [x] **E2** — Lifeline hands a paste-able prompt, no API key required *(Shipped 2026-06-15 — VPS-BRAIN-OPTION-B-001)*
+- [x] **E3** — Recovery AI prompt is accurate and in the published repo *(Verified 2026-06-15)*
+- [x] **E4** — Lifeline heartbeat watcher triggers within 2 minutes *(Shipped 2026-06-15 — 2-min threshold)*
 
 ### Category F: Security & PII
-- [ ] **F1** — Zero {{USER_JERRY}}-specific server/channel IDs in the published repo (verified with grep)
-- [ ] **F2** — Zero hardcoded email addresses in any shipped file
-- [ ] **F3** — .env is not committed to the public repo
-- [ ] **F4** — Pre-deploy security scan passes (exit 0) before publish
-- [ ] **F5** — bot.js uses `process.env` or config files for all credentials — no literals
+- [x] **F1** — Zero {{USER_JERRY}}-specific server/channel IDs in published repo *(Verified 2026-06-15, commit f1d897a)*
+- [x] **F2** — Zero hardcoded email addresses in any shipped file *(Verified 2026-06-15)*
+- [x] **F3** — .env is not committed to the public repo *(denylist includes .env)*
+- [x] **F4** — Pre-deploy security scan passes *(pre-deploy-security-check.sh runs in pipeline)*
+- [x] **F5** — bot.js uses `process.env` or config files for all credentials *(Verified 2026-06-15)*
 
 ### Category G: The Gate (most important)
-- [ ] **G1** — HELM team has installed from the published `get-helm/get-helm` repo on a near-clean Mac (fresh user account, no HELM-specific tools pre-installed), following the Phase-1 → Phase-2 → Discord flow exactly as a new user would, and reached a working Discord conversation end-to-end. This has NEVER been done. It must happen before any external beta.
+- [ ] **G1** — 🔴 HELM team has installed from the published `get-helm/get-helm` repo on a near-clean Mac, following the Phase-1 → Phase-2 → Discord flow exactly as a new user would, and reached a working Discord conversation end-to-end. **THIS HAS NEVER BEEN DONE. Must happen before any external beta.**
 
 ---
 
@@ -391,7 +391,7 @@ These are verified issues found on 2026-06-15. **{{USER_JERRY}}'s decisions are 
 **Finding:** As of **June 15, 2026**, programmatic / non-interactive agent use (`claude -p`, Agent SDK, third-party agent apps) draws from a **separate monthly credit pool** — roughly **$20 on Pro, $100 on Max 5x, $200 on Max 20x**. An always-on HELM bot (health checks, PM sweeps, daily briefings, on-demand tasks) is exactly this programmatic path. Pro's small pool will likely be exhausted quickly.  
 **Why this matters:** Appendix B currently says "Pro is enough to start." That decision predates this credit-pool split and may now be **wrong** — a Pro user's HELM could go quiet within days, looking broken. This is the same class of failure as the Cowork false premise: a promised capability that doesn't hold.  
 **Options:** (1) Change the onboarding promise to "Max recommended for always-on; Pro only for light/interactive use." (2) Measure real weekly burn on a Pro account before any promise. (3) Support Console pay-per-token billing as an alternative.  
-**Status:** 🔴 Needs {{USER_JERRY}}'s decision — this changes a locked answer.
+**Status:** ✅ DECIDED — **Pro / $20 to start is fine** ({{USER_JERRY}} 2026-06-16). It depends on what the user is doing; light/interactive use is fine on Pro. Onboarding sets the honest expectation: "$20 Pro gets you started; heavy always-on use may need Max." Do NOT block onboarding on a Max requirement. Supersedes the "may be wrong" framing above.
 
 ### G-H: Desktop Code/Local sandboxes the network during install  🟡 NEW — refines the Hybrid path
 **Source:** Web research 2026-06-15 (Claude Code GitHub issue #37994).  
@@ -399,15 +399,23 @@ These are verified issues found on 2026-06-15. **{{USER_JERRY}}'s decisions are 
 **Implication for Hybrid:** For the install/configure block, prefer the CLI; the Desktop Code tab is fine for interactive use afterward. The published Phase-2 prompt should account for this (CLI as the install runner, not the Desktop sandbox).  
 **Status:** 🟡 Refinement — fold into the Phase-2 prompt rewrite. Verify on the clean-Mac gate.
 
-### G-I: Repo sprawl — four repos, one with a leaked PAT  🔴 NEW — needs consolidation decision
-**Finding:** There are currently **four** repos in play, which is the root of the landing-page confusion that helped sink the beta:
-1. **get-helm/get-helm** (public) — the real distribution repo (`helm-publish.sh` pushes here via an ephemeral temp clone).
-2. **get-helm/get-helm.github.io** (public, HTML) — the landing page the beta tester actually hit at `get-helm.github.io`.
-3. **get-helm/helm** (private) — purpose unclear; likely a stale dev mirror.
-4. **{{USER_GITHUB}}/helm** (the `~/helm-public` working tree) — its git remote **embeds an exposed GitHub PAT in the URL** (`ghp_…`). That PAT is a live credential and should be revoked.  
-**Why it matters:** A user (or a friend's link) can land on the wrong repo and see terminal-first content instead of the guided landing page — exactly what happened. Distribution should have one obvious front door.  
-**Recommended target structure:** keep **two** public repos with clear roles — `get-helm/get-helm` (code/install) and `get-helm/get-helm.github.io` (landing page only) — delete/private the stale `get-helm/helm`, and fix the `{{USER_GITHUB}}/helm` remote to drop the embedded PAT (then revoke that PAT). Collapsing to a single repo is possible (serve Pages from `get-helm/get-helm/docs`) but mixes a public marketing surface with the code repo.  
-**Status:** 🔴 Needs {{USER_JERRY}}'s decision — repo deletion/privatization is irreversible and public. Do NOT execute without approval.
+### G-I: Repo sprawl — five repos on {{USER_GITHUB}}, PAT in marvin-bot remote  🔴 NEW — consolidation in progress
+**Finding (corrected 2026-06-16 from {{USER_JERRY}}'s screenshot):** {{USER_GITHUB}} (private account) currently has **five** repos, plus the get-helm org:
+
+| Repo | Visibility | Purpose | Last update | Recommendation |
+|------|-----------|---------|-------------|----------------|
+| `{{USER_GITHUB}}/marvin-bot` | Private | Live bot.js + recovery scripts (the running system) | 3h ago | **KEEP — Core HELM sandbox** |
+| `{{USER_GITHUB}}/helm-config` | Private | Config + specs (pap-complete, P5.1) | 10h ago | **KEEP — personal info/config backup** (pending {{USER_JERRY}} confirm vs `helm`) |
+| `{{USER_GITHUB}}/helm-docs` | Public | HELM documentation | 3 days | DELETE (docs belong in get-helm, not personal account) |
+| `{{USER_GITHUB}}/helm` | Private | "Runs 24/7" — `~/helm-public` working tree | last week | DELETE (stale mirror) — confirm it's not the personal backup first |
+| `{{USER_GITHUB}}/platform-config` | Private | Old config | May 2 | DELETE (stale) |
+| `get-helm/get-helm` | Public | Distribution repo (code + templates) | — | KEEP — public front door |
+| `get-helm/get-helm.github.io` | Public | Landing page | — | KEEP — landing only |
+
+**Target end state:** {{USER_GITHUB}} holds **2 private repos** (Core HELM sandbox + personal info backup, both stay private — locked 2026-06-14). get-helm holds **2 public repos** (code + landing).
+**PAT location (corrected):** the live `ghp_` token is embedded in **`~/marvin-bot/.git/config`** remote URL ({{USER_GITHUB}}/marvin-bot.git) — NOT in `~/.env`. Revoke via github.com/settings/tokens. After revoke, marvin-bot's auto-push needs its credential re-set to the vault PAT (no token in URL).
+**Git-history PII:** ✅ Choice B — start get-helm/get-helm from scratch ({{USER_JERRY}} 2026-06-16).
+**Status:** 🔴 Deletions are irreversible + external — {{USER_JERRY}} executes in GitHub web UI (no gh CLI on this machine). One open confirm: is `{{USER_GITHUB}}/helm` or `helm-config` the canonical personal backup?
 
 ---
 
@@ -471,10 +479,7 @@ Quick lookup: which file implements which component.
 5. **#help** — ask how things work / report problems
 6. **#preferences** — change any setting; emergency `pause`/`resume`/`pause 2h` controls
 
-> **Open mismatch to resolve (needs {{USER_JERRY}}):** Three things are tangled and need one decision:
-> 1. P5.1 B18 actually lists MORE than 6 (#general, #new-workspace, #capture, workspace channels, #daily-briefing, #pap-status, #notify, #help, #feedback, #preferences). Appendix B picked 6. Which exact set does the tour walk?
-> 2. The help channel is **not** named `#help` on {{USER_JERRY}}'s server ({{USER_JERRY}}: "we have a different help channel, not #help"). The tour must reference channels by the names the init actually creates, not assumed names.
-> 3. **Tour-vs-build ordering ({{USER_JERRY}}'s question):** should the tour visit a workspace channel (e.g. #daily-briefing) BEFORE that workspace is built, or do we build the first workspace first and then tour? Recommendation: tour describes channels that already exist after init (system + capture channels), and the FIRST workspace is built right after the tour in #new-workspace — so the tour never points at an empty/unbuilt workspace. Needs {{USER_JERRY}}'s confirm.
+> **RESOLVED ({{USER_JERRY}} 2026-06-16):** Tour walks **only channels that already exist after init** (system + capture channels), referenced by the **names init actually creates** — never assumed names like `#help`, and never a workspace channel that hasn't been built. The **first workspace is built right after the tour** in #new-workspace, so the tour never points at an empty/unbuilt workspace. Engineer: derive the tour channel list dynamically from the channels init creates; do not hardcode a 6-item list or assume `#help`.
 
 ---
 

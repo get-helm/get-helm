@@ -75,13 +75,22 @@ while IFS= read -r _IP; do
   [[ -n "$_IP" ]] && IPS+=("$_IP")
 done <<< "$_TAILSCALE_IPS"
 
-# Discord server ID — read from channels.json at scan time
-# Placeholder token {{USER_DISCORD_SERVER_ID}} is VALID in staged files — do NOT scan for it
+# Discord IDs — server ID + all channel IDs read from channels.json at scan time
+# {{USER_DISCORD_SERVER_ID}} and {{USER_CHANNEL_*}} placeholders are VALID in staged files
 DISCORD_IDS=()
 _CHANNELS_JSON="${HOME}/helm-workspace/channels.json"
 if [[ -f "$_CHANNELS_JSON" ]]; then
-  _GUILD=$(python3 -c "import json; d=json.load(open('$_CHANNELS_JSON')); print(d.get('GUILD_ID',''))" 2>/dev/null || true)
-  [[ -n "$_GUILD" ]] && DISCORD_IDS+=("$_GUILD")
+  # Read ALL numeric values (guild + all channel IDs) so any unmasked ID is caught
+  while IFS= read -r _ID; do
+    [[ -n "$_ID" ]] && DISCORD_IDS+=("$_ID")
+  done < <(python3 -c "
+import json, re
+d = json.load(open('$_CHANNELS_JSON'))
+for v in d.values():
+  # Discord snowflake IDs: 17-20 digits
+  if re.fullmatch(r'[0-9]{17,20}', str(v)):
+    print(v)
+" 2>/dev/null || true)
 fi
 
 # Phone (placeholder — update if known)
@@ -168,16 +177,17 @@ do_scan_file() {
     fi
   done
 
-  # Check Discord server IDs
+  # Check Discord IDs (server ID + channel IDs)
   for DID in "${DISCORD_IDS[@]}"; do
     if grep -q "$DID" "$FILE" 2>/dev/null; then
       MATCHES=$(grep -n "$DID" "$FILE" 2>/dev/null || true)
       if [ -n "$MATCHES" ]; then
         if [ $FIX_MODE -eq 1 ]; then
-          sed -i '' "s/$DID/{{USER_DISCORD_SERVER_ID}}/g" "$FILE" 2>/dev/null || true
-          fixed "$FILE: replaced Discord server ID → {{USER_DISCORD_SERVER_ID}}"
+          # No auto-fix for channel IDs — each maps to a specific {{USER_CHANNEL_*}} placeholder.
+          # Run helm-placeholder-convert.sh to apply the correct mapping.
+          warn "$FILE: Discord ID $DID found — run helm-placeholder-convert.sh to fix"
         else
-          fail "$FILE: personal Discord server ID found"
+          fail "$FILE: personal Discord ID found: $DID"
           HIT=1
         fi
       fi

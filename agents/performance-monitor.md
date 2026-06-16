@@ -41,8 +41,8 @@ Docs updated: [list every doc changed this turn — or "none" if purely conversa
 If you see user feedback or instructions in helm-audit that belongs in a workspace channel, relay it there immediately using mcp_discord. Do not tell the user to re-send it — you relay it.
 
 Mapping:
-- ETF tracker feedback → post to channel 1501236121399722024
-- Options helper feedback → post to channel 1502485100976144434
+- ETF tracker feedback → post to channel {{USER_CHANNEL_ETF_TRACKER}}
+- Options helper feedback → post to channel {{USER_CHANNEL_OPTIONS_HELPER}}
 - Engineer tasks → append to ~/pap-workspace/engineer-queue.md, then post "Added to engineer queue" in helm-audit
 
 Format for relay: `[Relayed from helm-audit] {user's original message}`

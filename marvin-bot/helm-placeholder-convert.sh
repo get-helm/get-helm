@@ -78,6 +78,17 @@ replacements = [
     (r'{{USER_CHANNEL_HELM_AUDIT}}', '{{USER_CHANNEL_HELM_AUDIT}}'),
     (r'{{USER_CHANNEL_HELM_STATUS}}', '{{USER_CHANNEL_HELM_STATUS}}'),
     (r'{{USER_CHANNEL_BETA_USERS}}', '{{USER_CHANNEL_BETA_USERS}}'),
+    (r'{{USER_CHANNEL_AGENT_BOARD}}', '{{USER_CHANNEL_AGENT_BOARD}}'),
+    # Additional standard channel IDs (PUBLISH-PII-CHANNELS-001)
+    (r'{{USER_CHANNEL_GENERAL}}', '{{USER_CHANNEL_GENERAL}}'),
+    (r'{{USER_CHANNEL_RECOVERY}}', '{{USER_CHANNEL_RECOVERY}}'),
+    # Workspace-specific channel IDs — genericized for distribution
+    (r'{{USER_CHANNEL_ETF_TRACKER}}', '{{USER_CHANNEL_ETF_TRACKER}}'),
+    (r'{{USER_CHANNEL_OPTIONS_HELPER}}', '{{USER_CHANNEL_OPTIONS_HELPER}}'),
+    # User-specific IDs
+    (r'{{USER_DISCORD_USER_ID}}', '{{USER_DISCORD_USER_ID}}'),
+    # {{USER_JERRY}}-PROFILE filename pattern (all-caps, in file path references)
+    (r'{{USER_JERRY}}-PROFILE', '{{USER_JERRY}}-PROFILE'),
 ]
 
 for pattern, replacement in replacements:

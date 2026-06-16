@@ -26,7 +26,7 @@ let NTFY_TOPIC = null;
 try { NTFY_TOPIC = fs.readFileSync(NTFY_TOPIC_FILE, 'utf8').trim(); } catch (_) {}
 
 const ALLOWED_CHANNELS = null; // null = accept in all channels
-const RECOVERY_CHANNEL_ID = process.env.RECOVERY_CHANNEL_ID || '1510783392021745756';
+const RECOVERY_CHANNEL_ID = process.env.RECOVERY_CHANNEL_ID || '{{USER_CHANNEL_RECOVERY}}';
 const LIFELINE_MSG_KEY = '/tmp/lifeline-pinned-msg.json';
 
 // VPS-BRAIN-OPTION-B-001: heartbeat file written by Mac Mini via Tailscale

@@ -55,7 +55,7 @@ bot.js ALSO emits events automatically where it has signal:
 On every ledger append, bot.js regenerates:
 - `system/TASK-BOARD.md` — full board: Pipeline (concept/design/queued/in-progress/blocked/waiting-on-{{USER_JERRY}}/done-this-week) + Running Now (joined from agent-ledger + checkpoints)
 - **ONE pinned Discord message per surface, edited in place** (proven pattern: DECISION-DIGEST-001):
-  - mission-control (or designated tracking channel 1514116690319900735): full board, plain English, no internal IDs without translation
+  - mission-control (or designated tracking channel {{USER_CHANNEL_AGENT_BOARD}}): full board, plain English, no internal IDs without translation
   - each workspace channel: pinned board filtered to `workspace==<name>`
 
 Pinned-edited-in-place beats new posts (no scroll archaeology, always current) and beats

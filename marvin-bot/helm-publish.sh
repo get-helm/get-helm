@@ -146,7 +146,7 @@ DENY_EXACT=(
   "CONFIG.md"
   "VOICE-AND-STYLE.md"
   # Personal knowledge files
-  "knowledge/JERRY-PROFILE.md"    # {{USER_JERRY}}'s personal profile (OWNER-PROFILE.md is the template)
+  "knowledge/{{USER_JERRY}}-PROFILE.md"    # {{USER_JERRY}}'s personal profile (OWNER-PROFILE.md is the template)
   "knowledge/OWNER-PROFILE.md"
   "knowledge/pap-complete.md"
   "knowledge/HELM-FACTS.md"
@@ -288,6 +288,13 @@ DENY_EXACT=(
   "scripts/monarch-token.py"
   "scripts/usage/claude-scraper.py"
   "scripts/usage/token-baseline.json"  # operational snapshot with channel IDs — not for distribution
+  "scripts/usage/daily-token-summary.json"  # runtime usage data — not for distribution
+  "scripts/usage/daily-token-summary.py"    # operational usage tracking script
+  "scripts/usage/workspace-report.py"  # operational workspace-specific report
+  "pap-metrics-json.py"  # {{USER_JERRY}}-specific operational metrics with workspace channel IDs
+  "pap-health-check.sh"  # {{USER_JERRY}}-specific health check with workspace channel IDs
+  "gap-audit-weekly.sh"   # {{USER_JERRY}}-specific weekly audit with workspace channel IDs
+  "gap-audit-nightly.sh"  # {{USER_JERRY}}-specific nightly audit with workspace channel IDs
   # Personal scripts with hardcoded paths/domains
   "scripts/morning-brief.py"
   "push-dashboard-data.py"
@@ -624,7 +631,7 @@ GIT_WORK_DIR=$(mktemp -d /tmp/helm-git-push-XXXXX)
 trap "rm -rf $GIT_WORK_DIR" EXIT
 
 echo "  Cloning $TARGET_REPO for push..."
-git clone "https://${GITHUB_PAT}@github.com/${TARGET_REPO}.git" "$GIT_WORK_DIR" --quiet 2>&1 | grep -v "^$" || true
+GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone "https://${GITHUB_PAT}@github.com/${TARGET_REPO}.git" "$GIT_WORK_DIR" --quiet 2>&1 | grep -v "^$" || true
 
 echo "  Syncing staged files into git worktree..."
 rsync -a --delete "$STAGING_DIR/" "$GIT_WORK_DIR/" --exclude ".git" 2>/dev/null
@@ -643,7 +650,9 @@ else
   echo "  Committing $STAGED_COUNT changed files..."
   git commit -m "helm-publish ${VERSION}: ${STAGED_COUNT} files updated" --quiet
   echo "  Pushing to $TARGET_REPO..."
-  git push origin HEAD:main --quiet 2>&1 || git push origin HEAD:master --quiet 2>&1
+  # Bypass osxkeychain credential helper (blocks in headless environments)
+  GIT_TERMINAL_PROMPT=0 git -c credential.helper= push origin HEAD:main --quiet 2>&1 || \
+  GIT_TERMINAL_PROMPT=0 git -c credential.helper= push origin HEAD:master --quiet 2>&1
   PUSH_COUNT="$STAGED_COUNT"
   echo "  ✓ Pushed $PUSH_COUNT files"
   log "Stage 5 PASS: $PUSH_COUNT files pushed to $TARGET_REPO ($VERSION)"

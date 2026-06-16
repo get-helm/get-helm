@@ -18,8 +18,8 @@ status: locked — awaiting QMD setup
 ### Channels (all history, no date cutoff)
 
 **Workspace channels:**
-- etf-tracker (1501236121399722024)
-- options-helper (1502485100976144434)
+- etf-tracker ({{USER_CHANNEL_ETF_TRACKER}})
+- options-helper ({{USER_CHANNEL_OPTIONS_HELPER}})
 - japan-2026 (1504684387852222465)
 - daily-brief (1504126943669260403)
 - financial-review (1504160847134720050)
@@ -45,7 +45,7 @@ Format:
 ```json
 {
   "workspace_channels": [
-    {"name": "etf-tracker", "channel_id": "1501236121399722024"},
+    {"name": "etf-tracker", "channel_id": "{{USER_CHANNEL_ETF_TRACKER}}"},
     ...
   ],
   "last_updated": "2026-05-21"

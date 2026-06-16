@@ -50,7 +50,7 @@ When a user asks "what did I save about X", "what do I know about Y", "find in m
 
 1. Run `~/marvin-bot/qmd-query.sh "[topic]" 5` to search the second brain
 2. Read the top 3 results (source files) to extract full context
-3. Post a structured response to #general (channel 1498823989324419094):
+3. Post a structured response to #general (channel {{USER_CHANNEL_GENERAL}}):
    - 3-5 bullets: each is one capture, with source title + key finding relevant to the query
    - Format: "From second brain: [Title] (date) — [relevant finding]"
    - If qmd returns nothing: say so and suggest what the user might want to capture next
@@ -64,7 +64,7 @@ From your second brain on prompt caching:
 • **Saving Money with Claude Session Limits** (2026-05-08) — Restart-heavy patterns reset cache constantly
 ```
 
-Use discord-post.sh for the response: `~/marvin-bot/discord-post.sh 1498823989324419094 "message"`
+Use discord-post.sh for the response: `~/marvin-bot/discord-post.sh {{USER_CHANNEL_GENERAL}} "message"`
 
 ---
 

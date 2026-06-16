@@ -22,18 +22,18 @@ LOOKBACK_HOURS = 24
 
 # Channel ID → agent type mapping
 CHANNEL_AGENT_MAP = {
-    "1498823989324419094": "help",          # general
+    "{{USER_CHANNEL_GENERAL}}": "help",          # general
     "1501656066340032776": "curiosity",     # new-workspace
     "{{USER_CHANNEL_HELM_AUDIT}}": "engineer",      # helm-audit / engineer channel
     "{{USER_CHANNEL_HELM_STATUS}}": "help",          # helm-status
     "{{USER_CHANNEL_HELM_IMPROVEMENTS}}": "product-manager",  # helm-improvements
-    "1502485100976144434": "workspace",     # options-helper
-    "1501236121399722024": "workspace",     # etf-tracker
+    "{{USER_CHANNEL_OPTIONS_HELPER}}": "workspace",     # options-helper
+    "{{USER_CHANNEL_ETF_TRACKER}}": "workspace",     # etf-tracker
     "1504160847134720050": "workspace",     # financial-review
     "1504126943669260403": "workspace",     # daily-brief
     "1503509979226329128": "workspace",     # mission-control
     "1506654092662018161": "workspace",     # options-helper thread
-    "1510783392021745756": "help",          # recovery channel
+    "{{USER_CHANNEL_RECOVERY}}": "help",          # recovery channel
     # helm-improvements threads (product-manager)
     "1507889139742412871": "product-manager",  # thread: Claude costs
     "{{USER_CHANNEL_BETA_USERS}}": "product-manager",  # thread: Additional users
@@ -45,17 +45,17 @@ CHANNEL_AGENT_MAP = {
 }
 
 CHANNEL_NAMES = {
-    "1498823989324419094": "#general",
+    "{{USER_CHANNEL_GENERAL}}": "#general",
     "1501656066340032776": "#new-workspace",
     "{{USER_CHANNEL_HELM_AUDIT}}": "#helm-audit",
     "{{USER_CHANNEL_HELM_STATUS}}": "#helm-status",
     "{{USER_CHANNEL_HELM_IMPROVEMENTS}}": "#helm-improvements",
-    "1502485100976144434": "#options-helper",
-    "1501236121399722024": "#etf-tracker",
+    "{{USER_CHANNEL_OPTIONS_HELPER}}": "#options-helper",
+    "{{USER_CHANNEL_ETF_TRACKER}}": "#etf-tracker",
     "1504160847134720050": "#financial-review",
     "1504126943669260403": "#daily-brief",
     "1503509979226329128": "#mission-control",
-    "1510783392021745756": "#recovery",
+    "{{USER_CHANNEL_RECOVERY}}": "#recovery",
     "1507889139742412871": "#helm-improvements/thread",
     "{{USER_CHANNEL_BETA_USERS}}": "#helm-improvements/thread",
     "1512136473359679518": "#helm-improvements/thread",

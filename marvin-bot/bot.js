@@ -1082,7 +1082,7 @@ function ledgerLastKilledEntry(channelId) {
 }
 
 // ─── AGENT BOARD (AGENT-BOARD-001) ──────────────────────────────────────────
-const AGENT_BOARD_CHANNEL = '1514116690319900735';
+const AGENT_BOARD_CHANNEL = config.AGENT_BOARD_CHANNEL;
 const AGENT_BOARD_MD_PATH = path.join(WORKDIR, 'system', 'AGENT-BOARD.md');
 const AGENT_BOARD_MSG_PATH = path.join(WORKDIR, 'system', 'agent-board-msg.json');
 
@@ -1681,13 +1681,18 @@ function runClaude(prompt, channelId, agentKey, extraEnv, agentInstructions, opt
           if (stderr && stderr.trim()) {
             console.error(`[runClaude] ${agentKey} stderr (exit ${err.code || 1}): ${stderr.trim().slice(0, 600)}`);
           }
-          // Include stdout in error detection — model errors and other important messages may be in stdout, not stderr
-          const fullMsg = `${err.message}\n${stderr}\n${stdout}`;
+          // FALSEALARM-002: err.message from execFile contains the full -p prompt argument text,
+          // which includes agent instructions that may contain auth/session terminology
+          // (e.g. "session expired" in product-manager instructions) → false positive auth detection.
+          // Only classify errors from stderr/stdout — the actual Claude CLI output, not the command args.
+          const errOutput = `${stderr}\n${stdout}`;
+          const fullMsg = `${err.message}\n${errOutput}`; // kept for logging only
           const tagged = new Error(fullMsg);
-          tagged.rateLimited = isRateLimitError(fullMsg) || isRateLimitError(stderr) || isRateLimitError(stdout);
+          tagged.rateLimited = isRateLimitError(errOutput);
           // Check for model unavailable BEFORE auth expired — "may not have access" shouldn't trigger session recovery
-          tagged.modelUnavailable = isModelUnavailableError(fullMsg) || isModelUnavailableError(stdout);
-          tagged.authExpired = !tagged.modelUnavailable && (isAuthExpiredError(fullMsg) || isAuthExpiredError(stderr) || isAuthExpiredError(stdout));
+          tagged.modelUnavailable = isModelUnavailableError(errOutput);
+          tagged.authExpired = !tagged.modelUnavailable && isAuthExpiredError(errOutput);
+          tagged.subscriptionLimit = !tagged.modelUnavailable && !tagged.authExpired && isSubscriptionLimitError(errOutput);
           // RECOVERY-RATE-LIMIT-001: distinguish rate-limit (429) from API timeout (down/unreachable)
           // Timeout: no output at all + API heartbeat has recent failures → CRITICAL log
           const isApiTimeout = !tagged.rateLimited && !tagged.authExpired && !tagged.modelUnavailable && heartbeatFailCount >= 1;
@@ -1758,6 +1763,11 @@ function runClaude(prompt, channelId, agentKey, extraEnv, agentInstructions, opt
         }
       }
     );
+
+    // Close stdin immediately — Claude CLI is invoked with -p (non-interactive), so no stdin
+    // data is expected. Closing stdin eliminates the "no stdin data received in 3s" startup
+    // warning and prevents the 3-second delay before the CLI begins processing the prompt.
+    try { if (child.stdin) child.stdin.end(); } catch {}
 
     // LIVENESS-STREAM-001: track stdout activity for silence watchdog.
     // execFile buffers all output until exit — watchdog previously had no liveness signal
@@ -2854,51 +2864,104 @@ async function pushToGitHub(repoPath, localPath) {
 // ─── ENG-TOUR-001: 5-STEP ONBOARDING TOUR ─────────────────────────────────
 // Sequential embed tour with a "Next →" button. Triggered by GUILD_MEMBER_ADD
 // (auto-DM new members, falls back to #general) or by typing "/tour" in any channel.
-// Tour steps are generated dynamically so channel names and bot name stay accurate
+// TOUR-CREATED-CHANNELS-001: Tour reads created channel set from channels.json at send
+// time so it only references channels that actually exist. No hardcoded channel list.
 function buildTourSteps(botName) {
   const name = botName || AGENT_NAME || 'HELM';
+
+  // Dynamic channel list: read channels.json to enumerate only created channels
+  let channelDesc;
+  try {
+    const chPath = path.join(config.WORKDIR, 'channels.json');
+    if (fs.existsSync(chPath)) {
+      const chMap = JSON.parse(fs.readFileSync(chPath, 'utf8'));
+      const keyOrder = ['GENERAL_CHANNEL','NEW_WORKSPACE_CHANNEL','CAPTURE_CHANNEL','DAILY_BRIEFING_CHANNEL','HELP_CHANNEL','PREFERENCES_CHANNEL'];
+      const keyMeta = {
+        'GENERAL_CHANNEL':      ['general',       'make requests, ask questions, start anything'],
+        'NEW_WORKSPACE_CHANNEL':['new-workspace',  'start a new automation project here'],
+        'CAPTURE_CHANNEL':      ['capture',        'drop links, notes, or ideas to save them'],
+        'DAILY_BRIEFING_CHANNEL':['daily-briefing','your morning summary (calendar, tasks, markets)'],
+        'HELP_CHANNEL':         ['help',           'get help or ask questions'],
+        'PREFERENCES_CHANNEL':  ['preferences',    `change how ${name} behaves for you`],
+      };
+      const lines = keyOrder.filter(k => chMap[k]).map(k => `**#${keyMeta[k][0]}** — ${keyMeta[k][1]}`);
+      if (lines.length > 0) channelDesc = lines.join('\n');
+    }
+  } catch (_) {}
+  if (!channelDesc) {
+    channelDesc = `**#general** — make requests, ask questions, start anything\n**#new-workspace** — start a new automation project here\n**#capture** — drop links, notes, or ideas to save them\n**#daily-briefing** — your morning summary (calendar, tasks, markets)\n**#help** — get help or ask questions about how things work\n**#preferences** — change how ${name} behaves for you`;
+  }
+
   return [
     {
-      title: '👋 Welcome to HELM',
-      description: `HELM is your personal automation platform. It turns plain-English requests into working automations — research, tracking, reports, tools — and runs them for you around the clock.\n\nThis quick tour shows you what's here and how to get started.`
+      title: `👋 Welcome to ${name}`,
+      description: `${name} is your personal automation platform. It turns plain-English requests into working automations — research, tracking, reports, tools — and runs them for you around the clock.\n\nThis quick tour walks you through your channels and how to get started.`
     },
     {
       title: '📋 Your channels',
-      description: '**#general** — make requests, ask questions, start anything\n**#helm-status** — system health at a glance\n**#helm-recovery** — if things break, recovery steps live here\n**#feedback** — type anything there to reach the HELM developer directly\n**#preferences** — change how HELM works for you\n**#new-workspace** — start a new automation here'
+      description: channelDesc
     },
     {
       title: '💬 How to give instructions',
-      description: `Just type plain English in **#general** — no commands, no special syntax.\n\nFor example: *"Track the price of these 3 stocks and alert me on big moves"* or *"Summarize my emails every morning."*\n\n${name} asks clarifying questions when it needs them.`
+      description: `Just type plain English — no commands, no special syntax needed.\n\nFor example: *"Track the price of these 3 stocks and alert me on big moves"* or *"Summarize my emails every morning."*\n\n${name} asks clarifying questions when it needs them.`
     },
     {
-      title: '🩺 How to check on things',
-      description: `Type **status** in **#general** for a live health report.\n\nOr check **#helm-status** anytime — it updates automatically.\n\nIf something looks broken, **#helm-recovery** has step-by-step fixes.`
+      title: '⏸️ Emergency controls',
+      description: `In any channel:\n\n• Type **pause** — stops all proactive tasks immediately\n• Type **resume** — restarts everything\n• Type **pause 2h** — pauses for 2 hours, then auto-resumes\n\nUseful if ${name} gets noisy or you need quiet time.`
     },
     {
       title: '🚀 Build your first automation',
-      description: `The best way to start: go to **#new-workspace** and describe something you do manually every week.\n\n${name} will ask a few questions, then build it and run it for you.\n\nThat's it — you're set up. Welcome to HELM!`
+      description: `You're all set! Head to **#new-workspace** and type something you do manually — like:\n\n• *"Track the price of AAPL and alert me on 5% moves"*\n• *"Summarize my emails every morning at 8am"*\n\n${name} will ask a few questions, then build and run it for you.`
     }
   ];
 }
-const TOUR_STEPS = buildTourSteps();
 
 // sendTourStep: post tour step N (0-based) to a channel, with a Next → button unless it's the last step.
+// TOUR-CREATED-CHANNELS-001: rebuilds steps fresh each time (reads channels.json for dynamic list).
+// On last step: posts first-workspace kickoff prompt to #new-workspace.
 async function sendTourStep(channel, stepIndex) {
-  const step = TOUR_STEPS[stepIndex];
+  const steps = buildTourSteps();
+  const step = steps[stepIndex];
   if (!step) return null;
   const palette = getActivePalette();
   const embed = {
     color: hexToInt(palette.primary),
     title: step.title,
     description: step.description,
-    footer: { text: `Step ${stepIndex + 1} of ${TOUR_STEPS.length}` }
+    footer: { text: `Step ${stepIndex + 1} of ${steps.length}` }
   };
-  const isLast = stepIndex >= TOUR_STEPS.length - 1;
+  const isLast = stepIndex >= steps.length - 1;
   const components = isLast ? [] : [{
     type: 1,
     components: [{ type: 2, style: 1, label: 'Next →', custom_id: `tour_next_${stepIndex + 1}` }]
   }];
-  return channel.send({ embeds: [embed], components });
+  const result = await channel.send({ embeds: [embed], components });
+
+  // TOUR-CREATED-CHANNELS-001: on last step, post workspace kickoff to #new-workspace
+  if (isLast) {
+    try {
+      const guild = channel.guild || (channel.type === 1 ? null : channel.guild);
+      if (guild) {
+        let chMap = {};
+        try {
+          const chPath = path.join(config.WORKDIR, 'channels.json');
+          if (fs.existsSync(chPath)) chMap = JSON.parse(fs.readFileSync(chPath, 'utf8'));
+        } catch (_) {}
+        const newWsCh = (chMap['NEW_WORKSPACE_CHANNEL'] && guild.channels.cache.get(chMap['NEW_WORKSPACE_CHANNEL']))
+          || guild.channels.cache.find(c => c.type === 0 && c.name === 'new-workspace');
+        if (newWsCh) {
+          await newWsCh.send(
+            `👋 **Ready to build your first automation?**\n\nJust describe something you do manually — for example:\n\n• *"Track stock prices and alert me on big moves"*\n• *"Summarize my emails every morning at 8am"*\n\nI'll ask a few questions, then build and run it for you.`
+          ).catch(() => {});
+          console.log('[tour] posted first-workspace kickoff to #new-workspace');
+        }
+      }
+    } catch (e) {
+      console.error('[tour] workspace-handoff error:', e.message);
+    }
+  }
+
+  return result;
 }
 
 // startTourForNewMember: DM the tour to a new member; fall back to #general if DMs are closed.
@@ -4023,9 +4086,9 @@ client.once('clientReady', async () => {
           '3. Restart the Mac mini (hold power 5s)',
           '',
           '**Common issues:**',
-          '• `@${AGENT_NAME} status` — check if bot is alive',
-          '• `@${AGENT_NAME} deferred` — check incomplete setup',
-          '• `@${AGENT_NAME} help` — command reference',
+          `• \`@${AGENT_NAME} status\` — check if bot is alive`,
+          `• \`@${AGENT_NAME} deferred\` — check incomplete setup`,
+          `• \`@${AGENT_NAME} help\` — command reference`,
           '',
           `_Last updated: ${new Date().toISOString()}_`,
         ].join('\n');
@@ -4592,7 +4655,7 @@ client.on('raw', async (event) => {
         if (genId) {
           const genCh = await client.channels.fetch(genId).catch(() => null);
           if (genCh) {
-            await genCh.send('✅ HELM is set up and ready — see each channel for a quick intro. Type `@${AGENT_NAME} help` anytime.').catch(() => {});
+            await genCh.send(`✅ ${AGENT_NAME} is set up and ready — see each channel for a quick intro. Just type in any channel to get started.`).catch(() => {});
             // TOUR-FIRST-USER-001: post tour on auto-init
             const tourFlag = path.join(config.WORKDIR, 'system', '.first-boot-tour.flag');
             if (!fs.existsSync(tourFlag)) {
@@ -7264,7 +7327,9 @@ client.on('raw', async (event) => {
     }
 
     // === @HELM INIT CHANNEL LAYOUT + RETIRE ===
-    const helmInitMatch = content && content.match(/^@?helm\s+(init|retire\s+workspace)\b(.*)$/i);
+    // MENTION-REMOVE-001: match configured agent name (not hardcoded 'helm')
+    const _initAgentRe = (AGENT_NAME || 'helm').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const helmInitMatch = content && content.match(new RegExp(`^@?(?:${_initAgentRe})\\s+(init|retire\\s+workspace)\\b(.*)$`, 'i'));
     if (helmInitMatch && message?.author?.id === OWNER_ID) {
       const initCmd = helmInitMatch[1].toLowerCase();
       if (initCmd === 'init') {
@@ -7344,7 +7409,7 @@ client.on('raw', async (event) => {
       } else if (initCmd.startsWith('retire')) {
         const wsChanName = helmInitMatch[2].trim();
         if (!wsChanName) {
-          await channel.send('⚠️ Usage: `@${AGENT_NAME} retire workspace [channel-name]`').catch(() => {});
+          await channel.send(`⚠️ Usage: \`@${AGENT_NAME} retire workspace [channel-name]\``).catch(() => {});
           return;
         }
         try {
@@ -7371,7 +7436,12 @@ client.on('raw', async (event) => {
     // === END @HELM INIT CHANNEL LAYOUT + RETIRE ===
 
     // === @HELM DEFERRED COMMAND ===
-    const isDeferredCmd = content && /^@?helm\s+deferred\b/i.test(content.trim());
+    // helmCmdRe: dynamic regex matching the configured AGENT_NAME (not hardcoded "helm")
+    const helmCmdRe = (suffix) => {
+      const n = (AGENT_NAME || 'helm').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`^@?(?:${n})\\s+${suffix}`, 'i');
+    };
+    const isDeferredCmd = content && helmCmdRe('deferred\\b').test(content.trim());
     if (isDeferredCmd && message?.author?.id === OWNER_ID) {
       const deferredPath = path.join(config.WORKDIR, '.deferred-items.json');
       try {
@@ -7386,9 +7456,9 @@ client.on('raw', async (event) => {
           return;
         }
         const labels = {
-          skipped_lifeline: '🤖 Lifeline bot (backup recovery bot — type `@${AGENT_NAME} add lifeline` when ready)',
-          skipped_vps: '🖥️ VPS hosting (24/7 uptime + recovery webpage — type `@${AGENT_NAME} add vps [IP] [domain]`)',
-          skipped_github: '🔗 GitHub token (config backup — type `@${AGENT_NAME} add github [token]`)',
+          skipped_lifeline: `🤖 Lifeline bot (backup recovery bot — type \`@${AGENT_NAME} add lifeline\` when ready)`,
+          skipped_vps: `🖥️ VPS hosting (24/7 uptime + recovery webpage — type \`@${AGENT_NAME} add vps [IP] [domain]\`)`,
+          skipped_github: `🔗 GitHub token (config backup — type \`@${AGENT_NAME} add github [token]\`)`,
         };
         const lines = pending.map(([k]) => labels[k] || `• ${k}`);
         const msg = `📋 **Deferred setup items** (${pending.length} remaining):\n\n${lines.join('\n')}\n\n_Complete these when ready. Type \`@${AGENT_NAME} deferred\` again to check status._`;
@@ -7402,7 +7472,7 @@ client.on('raw', async (event) => {
 
     // === @HELM POST-ONBOARD COMMANDS ===
     // Handles: @HELM add vps, add domain, add github, add lifeline, swap email
-    const helmCmdMatch = content && content.match(/^@?helm\s+(add\s+vps|add\s+domain|add\s+github|add\s+lifeline|swap\s+email)\b(.*)$/i);
+    const helmCmdMatch = content && content.match(helmCmdRe('(add\\s+vps|add\\s+domain|add\\s+github|add\\s+lifeline|swap\\s+email)\\b(.*)'));
     if (helmCmdMatch && message?.author?.id === OWNER_ID) {
       const subCmd = helmCmdMatch[1].toLowerCase().replace(/\s+/, '-');
       const args = helmCmdMatch[2].trim().split(/\s+/).filter(Boolean);
@@ -7411,7 +7481,7 @@ client.on('raw', async (event) => {
       try {
         if (subCmd === 'add-vps') {
           const [ip, domain, sshUser = 'helm'] = args;
-          if (!ip || !domain) { reply = '⚠️ Usage: `@${AGENT_NAME} add vps [IP] [domain] [ssh-user=helm]`'; }
+          if (!ip || !domain) { reply = `⚠️ Usage: \`@${AGENT_NAME} add vps [IP] [domain] [ssh-user=helm]\``; }
           else {
             const cfg = fs.readFileSync(configPath, 'utf8');
             if (!cfg.includes('VPS_IP:')) {
@@ -7441,7 +7511,7 @@ client.on('raw', async (event) => {
           }
         } else if (subCmd === 'add-domain') {
           const [domainName] = args;
-          if (!domainName) { reply = '⚠️ Usage: `@${AGENT_NAME} add domain [name]`'; }
+          if (!domainName) { reply = `⚠️ Usage: \`@${AGENT_NAME} add domain [name]\``; }
           else {
             const cfg = fs.readFileSync(configPath, 'utf8');
             if (!cfg.includes('USER_DOMAIN:')) {
@@ -7453,7 +7523,7 @@ client.on('raw', async (event) => {
           }
         } else if (subCmd === 'add-github') {
           const [token] = args;
-          if (!token) { reply = '⚠️ Usage: `@${AGENT_NAME} add github [token]`'; }
+          if (!token) { reply = `⚠️ Usage: \`@${AGENT_NAME} add github [token]\``; }
           else {
             const envPath = path.join(process.env.HOME, 'marvin-bot', '.env');
             const env = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
@@ -7466,7 +7536,7 @@ client.on('raw', async (event) => {
           }
         } else if (subCmd === 'add-lifeline') {
           const [lifelineToken] = args;
-          if (!lifelineToken) { reply = '⚠️ Usage: `@${AGENT_NAME} add lifeline [bot-token]`\nGet a token at discord.com/developers — create a new bot application.'; }
+          if (!lifelineToken) { reply = `⚠️ Usage: \`@${AGENT_NAME} add lifeline [bot-token]\`\nGet a token at discord.com/developers — create a new bot application.`; }
           else {
             const lifelinePath = path.join(process.env.HOME, '.helm-lifeline-token');
             fs.writeFileSync(lifelinePath, lifelineToken.trim(), { mode: 0o600 });
@@ -7480,7 +7550,7 @@ client.on('raw', async (event) => {
           }
         } else if (subCmd === 'swap-email') {
           const [oldEmail, newEmail] = args;
-          if (!oldEmail || !newEmail) { reply = '⚠️ Usage: `@${AGENT_NAME} swap email [old] [new]`'; }
+          if (!oldEmail || !newEmail) { reply = `⚠️ Usage: \`@${AGENT_NAME} swap email [old] [new]\``; }
           else {
             const cfg = fs.readFileSync(configPath, 'utf8');
             fs.writeFileSync(configPath, cfg.replace(new RegExp(oldEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newEmail));
@@ -7513,7 +7583,7 @@ client.on('raw', async (event) => {
           '```',
           `@${AGENT_NAME} add vps [IP] [domain] [ssh-user]`,
           '```',
-          '**Example:** `@${AGENT_NAME} add vps 203.0.113.10 myhelm.example.com helm`',
+          `**Example:** \`@${AGENT_NAME} add vps 203.0.113.10 myhelm.example.com helm\``,
           '',
           '`ssh-user` defaults to `helm` if omitted. After adding, the recovery guide updates automatically with your SSH details.',
         ].join('\n')).catch(e => console.error('[nl-vps-trigger] send error:', e.message));
@@ -7526,7 +7596,7 @@ client.on('raw', async (event) => {
     // Responds instantly without spawning an agent. Handles: /help, @HELM help, "help"
     const isHelpCommand = content && (
       /^\/help\b/i.test(content.trim()) ||
-      /^@?helm\s+help\b/i.test(content.trim()) ||
+      helmCmdRe('help\\b').test(content.trim()) ||
       content.trim().toLowerCase() === 'help'
     );
     if (isHelpCommand) {
@@ -7543,21 +7613,21 @@ client.on('raw', async (event) => {
           'This channel is for HELM proposals and PM work.',
           '',
           '**Commands:**',
-          '• `@${AGENT_NAME} status` — current system health',
-          '• `@${AGENT_NAME} deferred` — see incomplete setup items',
-          '• `@${AGENT_NAME} init` — create standard channel layout',
-          '• `@${AGENT_NAME} retire workspace [name]` — move workspace to Archive',
-          '• `@${AGENT_NAME} add vps [IP] [domain]` — add VPS configuration',
-          '• `@${AGENT_NAME} add domain [name]` — set custom domain',
-          '• `@${AGENT_NAME} add github [token]` — add GitHub token',
-          '• `@${AGENT_NAME} swap email [old] [new]` — update email in config',
+          `• \`@${AGENT_NAME} status\` — current system health`,
+          `• \`@${AGENT_NAME} deferred\` — see incomplete setup items`,
+          `• \`@${AGENT_NAME} init\` — create standard channel layout`,
+          `• \`@${AGENT_NAME} retire workspace [name]\` — move workspace to Archive`,
+          `• \`@${AGENT_NAME} add vps [IP] [domain]\` — add VPS configuration`,
+          `• \`@${AGENT_NAME} add domain [name]\` — set custom domain`,
+          `• \`@${AGENT_NAME} add github [token]\` — add GitHub token`,
+          `• \`@${AGENT_NAME} swap email [old] [new]\` — update email in config`,
         ].join('\n');
       } else if (isWorkspace) {
         helpText = [
           `📖 **#${workspaceChannelName} — Workspace Commands**`,
           '',
           '**Phase commands:**',
-          '• `@${AGENT_NAME} status` — current task status',
+          `• \`@${AGENT_NAME} status\` — current task status`,
           '• `/resume` — pick up where HELM left off',
           '• `/pause` — pause automation work here',
           '',
@@ -7583,8 +7653,8 @@ client.on('raw', async (event) => {
           '',
           '**Useful commands:**',
           '• `/help` — this message',
-          '• `@${AGENT_NAME} deferred` — see setup items to complete',
-          '• `@${AGENT_NAME} status` — system health check',
+          `• \`@${AGENT_NAME} deferred\` — see setup items to complete`,
+          `• \`@${AGENT_NAME} status\` — system health check`,
           '• `/resume` — pick up where HELM left off',
           '',
           '**Channels:**',
@@ -7608,7 +7678,7 @@ client.on('raw', async (event) => {
     const isNonWorkspace = !workspaceChannelName || workspaceChannelName === 'general' || channelId === GENERAL_CHANNEL;
     const AUTO_HELP_PATTERNS = /\b(how do i|how can i|what can (helm|it) do|what commands|where do i|how does helm|can helm|is there a way to|i don't know how|not sure how to)\b/i;
     if (isNonWorkspace && content && AUTO_HELP_PATTERNS.test(content) && content.includes('?')) {
-      const hint = '💡 **Quick tip:** Type `@${AGENT_NAME} help` for a full command list. For a new automation, just describe what you want — HELM will ask clarifying questions and build it.';
+      const hint = `💡 **Quick tip:** Just describe what you want in plain English — ${AGENT_NAME} will ask clarifying questions and build it. Or say 'help' for command reference.`;
       await channel.send(hint).catch(() => {});
     }
     // === END AUTO-CONTEXT HELP ===
@@ -7964,14 +8034,16 @@ client.on('raw', async (event) => {
       } catch {}
     }
   } catch (err) {
-    console.error('Claude error:', err.message);
+    console.error('Claude error:', err.message?.slice(0, 300));
+    // FALSEALARM-002: use pre-classified flags from runClaude — don't re-check err.message which
+    // is fullMsg and contains the full -p prompt text that may match auth/session regex patterns.
     // Check for model unavailable FIRST — prevents false auth-expired classification
-    const modelUnavailable = err.modelUnavailable || isModelUnavailableError(err.message);
-    const authExpired = !modelUnavailable && (err.authExpired || isAuthExpiredError(err.message));
+    const modelUnavailable = err.modelUnavailable;
+    const authExpired = !modelUnavailable && err.authExpired;
     // auth-expired takes priority — prevents misclassification as rate limit
     // RECOVERY-T5: subscription limit is distinct from API rate limit — different user message, no backoff
-    const subscriptionLimit = !modelUnavailable && !authExpired && isSubscriptionLimitError(err.message);
-    const rateLimited = !modelUnavailable && !authExpired && !subscriptionLimit && (err.rateLimited || isRateLimitError(err.message));
+    const subscriptionLimit = !modelUnavailable && !authExpired && (err.subscriptionLimit || isSubscriptionLimitError(err.message?.slice(0, 500)));
+    const rateLimited = !modelUnavailable && !authExpired && !subscriptionLimit && err.rateLimited;
     try {
       if (channel) {
         if (modelUnavailable) {
@@ -8001,6 +8073,7 @@ client.on('raw', async (event) => {
                 // retry failed — next invocation re-checks the counter
               }
             }, delayMs);
+            return; // FALSEALARM-002: silent retry scheduled — don't fire immediate ❌ with no explanation
           } else {
             // 3 consecutive failures — session is genuinely expired, alert now
             authExpiredRetryCount.delete(channelId);
@@ -8066,6 +8139,7 @@ client.on('raw', async (event) => {
               }
             }, 2 * 60 * 1000);
             rateLimitRetryTimers.set(channelId, timer);
+            return; // auto-retry scheduled — don't fire immediate ❌ alongside the retry notice
           } else {
             await channel.send('⚠️ Rate limit persists after 2 auto-retries — please re-send when your usage resets.');
             appendEvent('rate_limit_retry_exhausted', channelId, null, null, null, {});
