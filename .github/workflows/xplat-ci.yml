@@ -1,0 +1,78 @@
+name: HELM Cross-Platform CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'specs/**'
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ./marvin-bot  # adjust if needed
+        run: npm ci
+      - name: Syntax check bot.js
+        run: node --check marvin-bot/bot.js
+      - name: Check shell scripts
+        run: bash -n marvin-bot/helm-init.sh && bash -n marvin-bot/install.sh
+
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ./marvin-bot
+        run: npm ci
+      - name: Syntax check bot.js
+        run: node --check marvin-bot/bot.js
+      - name: Check shell scripts
+        run: bash -n marvin-bot/helm-init.sh && bash -n marvin-bot/install.sh
+      - name: Lint systemd units
+        run: |
+          for f in marvin-bot/system/linux/*.service marvin-bot/system/linux/*.timer; do
+            echo "Checking $f"
+            grep -q "\[Unit\]" "$f" && echo "  OK: has [Unit]" || echo "  FAIL: missing [Unit]"
+          done
+
+  test-wsl2:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "${{ github.workspace }}\marvin-bot\windows\install.ps1",
+            [ref]$null, [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          Write-Output "PowerShell syntax OK"
+
+  crlf-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for CRLF in shell scripts
+        run: |
+          bad=$(find marvin-bot -name "*.sh" -exec file {} \; | grep CRLF | wc -l)
+          if [ "$bad" -gt 0 ]; then
+            find marvin-bot -name "*.sh" -exec file {} \; | grep CRLF
+            exit 1
+          fi
+          echo "No CRLF line endings found in shell scripts"

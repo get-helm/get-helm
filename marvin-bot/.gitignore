@@ -1,0 +1,8 @@
+.env
+node_modules/
+*.bak-*
+bot.lock
+*.log
+*.log.*.bak
+patches/
+mission-control/

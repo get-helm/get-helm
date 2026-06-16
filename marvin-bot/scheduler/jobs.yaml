@@ -1,0 +1,32 @@
+# HELM Scheduler — jobs.yaml
+# PM can add/remove jobs by editing this file. Daemon reloads within 60s.
+#
+# Fields:
+#   name:    unique job name (used in logs)
+#   command: shell command to run
+#   restart: always | on-failure | never
+#            always     — restart on any exit (including clean 0)
+#            on-failure — restart only if exit code != 0
+#            never      — run once, do not restart
+#   enabled: true | false  (false = daemon ignores the job entirely)
+
+jobs:
+  - name: bot
+    command: "node /Users/{{USER_HOME}}/marvin-bot/bot.js"
+    restart: always
+    enabled: true
+
+  - name: lifeline
+    command: "node /Users/{{USER_HOME}}/marvin-bot/lifeline.js"
+    restart: always
+    enabled: false  # enable after lifeline bot is created
+
+  - name: pm-heartbeat
+    command: "bash /Users/{{USER_HOME}}/marvin-bot/pm-heartbeat.sh"
+    restart: always
+    enabled: true
+
+  - name: synthesizer-nightly
+    command: "bash /Users/{{USER_HOME}}/marvin-bot/synthesizer-nightly.sh"
+    restart: never
+    enabled: true

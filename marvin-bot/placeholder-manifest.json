@@ -1,0 +1,183 @@
+{
+  "_comment": "Canonical token manifest for HELM placeholder system (PLACEHOLDER-LIFECYCLE-001). Every {{USER_*}} token defined once. collect: onboarding|auto|vault|derived",
+  "_canonical_aliases": {
+    "USER_JTOLZMAN": "USER_GITHUB",
+    "USER_NAME": "USER_JERRY",
+    "USER_PREFERRED_NAME": "USER_JERRY",
+    "USER_USERNAME": "USER_HOME"
+  },
+
+  "USER_JERRY": {
+    "desc": "what to call the user (first name or preferred name)",
+    "collect": "onboarding",
+    "question": "What should I call you? (first name)",
+    "required": true,
+    "example": "Alex"
+  },
+  "USER_FULL_NAME": {
+    "desc": "user's full name",
+    "collect": "onboarding",
+    "question": "What is your full name?",
+    "required": true,
+    "example": "Alex Smith"
+  },
+  "USER_LAST_NAME": {
+    "desc": "user's last name",
+    "collect": "derived",
+    "source": "last word of USER_FULL_NAME",
+    "required": false
+  },
+  "USER_EMAIL": {
+    "desc": "user's primary email address",
+    "collect": "onboarding",
+    "question": "What is your email address?",
+    "required": true,
+    "example": "alex@example.com"
+  },
+  "USER_GMAIL": {
+    "desc": "user's Gmail address (for Claude auth)",
+    "collect": "onboarding",
+    "question": "Gmail address for Claude login (leave blank to use same as primary email):",
+    "required": false,
+    "example": "alex.smith@gmail.com"
+  },
+  "USER_HOME": {
+    "desc": "OS home directory username (macOS/Linux $USER)",
+    "collect": "auto",
+    "source": "$USER",
+    "required": true
+  },
+  "USER_DOMAIN": {
+    "desc": "user's web domain (optional — for hosting tools)",
+    "collect": "onboarding",
+    "question": "Your web domain, if you have one (e.g. example.com), or press Enter to skip:",
+    "required": false,
+    "default": "",
+    "example": "example.com"
+  },
+  "USER_GITHUB": {
+    "desc": "GitHub username",
+    "collect": "onboarding",
+    "question": "GitHub username (for syncing your HELM config):",
+    "required": false,
+    "example": "alexsmith"
+  },
+  "USER_DISCORD_SERVER_ID": {
+    "desc": "Discord server (guild) ID",
+    "collect": "onboarding",
+    "question": "Discord Server ID (right-click server name → Copy Server ID):",
+    "required": true,
+    "example": "123456789012345678"
+  },
+  "USER_ID": {
+    "desc": "Discord user ID of the owner",
+    "collect": "onboarding",
+    "question": "Your Discord User ID (right-click your name → Copy User ID):",
+    "required": false,
+    "example": "987654321098765432"
+  },
+  "USER_VPS_IP": {
+    "desc": "VPS IP address",
+    "collect": "onboarding",
+    "question": "VPS IP address (for remote recovery server), or press Enter to skip:",
+    "required": false,
+    "example": "1.2.3.4"
+  },
+  "USER_VPS_SSH": {
+    "desc": "VPS SSH connection string",
+    "collect": "derived",
+    "source": "root@USER_VPS_IP",
+    "required": false
+  },
+  "USER_FAMILY_MEMBER_1": {
+    "desc": "Primary family member name (for context/filtering)",
+    "collect": "onboarding",
+    "question": "Name of a key family member to personalize context (or press Enter to skip):",
+    "required": false,
+    "example": "Taylor"
+  },
+  "USER_FAMILY_MEMBER_2": {
+    "desc": "Secondary family member name",
+    "collect": "onboarding",
+    "question": "Another family member name (or press Enter to skip):",
+    "required": false,
+    "example": "Jordan"
+  },
+  "USER_EMAIL_ALT": {
+    "desc": "alternate / junk email address (filtering)",
+    "collect": "onboarding",
+    "question": "Alternate or junk email address to filter out (or press Enter to skip):",
+    "required": false,
+    "example": "junk@example.com"
+  },
+  "USER_EMAIL_JUNK": {
+    "desc": "junk/secondary email address to exclude from email ingest (alias for USER_EMAIL_ALT)",
+    "collect": "derived",
+    "source": "USER_EMAIL_ALT",
+    "required": false,
+    "example": "junk@example.com"
+  },
+  "USER_GITHUB_EMAIL": {
+    "desc": "GitHub-linked email address (often a personal Gmail used for GitHub auth)",
+    "collect": "onboarding",
+    "question": "GitHub-linked email address (leave blank to use same as primary email):",
+    "required": false,
+    "example": "alex.smith@gmail.com"
+  },
+  "USER_VPS_TAILSCALE_IP": {
+    "desc": "VPS Tailscale IP address (100.x.x.x)",
+    "collect": "onboarding",
+    "question": "VPS Tailscale IP address (or press Enter to skip):",
+    "required": false,
+    "example": "100.x.x.x"
+  },
+  "USER_SSH_HOST": {
+    "desc": "SSH connection string for Mac Mini (user@ip or user@tailscale-hostname)",
+    "collect": "derived",
+    "source": "{{USER_HOME}}@{{USER_MAC_TAILSCALE_IP}}",
+    "required": false,
+    "example": "alex@100.x.x.x"
+  },
+  "USER_STATUS_HOST": {
+    "desc": "Hostname for VPS status/recovery server (e.g. status.example.com)",
+    "collect": "derived",
+    "source": "status.{{USER_DOMAIN}}",
+    "required": false,
+    "example": "status.example.com"
+  },
+  "USER_MAC_TAILSCALE_IP": {
+    "desc": "Mac Mini Tailscale IP address (100.x.x.x)",
+    "collect": "auto",
+    "source": "tailscale ip --4 2>/dev/null || echo ''",
+    "required": false,
+    "example": "100.x.x.x"
+  },
+  "USER_CHANNEL_HELM_IMPROVEMENTS": {
+    "desc": "Discord channel ID for helm-improvements (main user-facing channel)",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_HELM_AUDIT": {
+    "desc": "Discord channel ID for helm-audit (internal log channel)",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_HELM_STATUS": {
+    "desc": "Discord channel ID for helm-status (system health channel)",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  },
+  "USER_CHANNEL_BETA_USERS": {
+    "desc": "Discord channel ID for beta/additional-users testing channel",
+    "collect": "derived",
+    "source": "created during @HELM init",
+    "required": false,
+    "example": "123456789012345678"
+  }
+}

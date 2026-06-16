@@ -1,0 +1,34 @@
+{
+  "aliases": {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-8",
+    "fable": "claude-opus-4-8"
+  },
+  "tiers": {
+    "fast": "haiku",
+    "default": "sonnet",
+    "best": "fable"
+  },
+  "trial": {
+    "active": false,
+    "replaces_tier": "sonnet",
+    "with_model": "fable",
+    "expires_at": "2026-06-22T07:00:00.000Z",
+    "revert_to": "sonnet",
+    "notified_expiry": false
+  },
+  "slash_commands": {
+    "/fable": "fable",
+    "/sonnet": "sonnet",
+    "/opus": "opus",
+    "/haiku": "haiku",
+    "/best": "fable",
+    "/fast": "haiku"
+  },
+  "transparency": {
+    "announce_override": true,
+    "announce_trial": true,
+    "fable_fallback_model": "claude-opus-4-8"
+  }
+}

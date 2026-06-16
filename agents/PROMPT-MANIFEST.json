@@ -1,0 +1,74 @@
+{
+  "_schema": "1.0",
+  "_description": "Defines which shared files are injected into each agent's prompt by bot.js.",
+  "_separator": "---END INJECTED CONTEXT---",
+
+  "defaults": {
+    "inject": [
+      { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" }
+    ]
+  },
+
+  "agents": {
+    "curiosity": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" },
+        { "path": "~/pap-workspace/ABOUT-ME.md", "label": "USER PROFILE" },
+        { "path": "~/pap-workspace/VOICE-AND-STYLE.md", "label": "VOICE AND STYLE" }
+      ]
+    },
+    "help": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" },
+        { "path": "~/pap-workspace/ABOUT-ME.md", "label": "USER PROFILE" },
+        { "path": "~/pap-workspace/VOICE-AND-STYLE.md", "label": "VOICE AND STYLE" }
+      ]
+    },
+    "engineer": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" },
+        { "path": "~/pap-workspace/engineer-context.md", "label": "ENGINEER CONTEXT" }
+      ]
+    },
+    "product-manager": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "scaffolder": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "executor": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "connector": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "performance-monitor": {
+      "comment": "TOKEN-TIERED-PROTOCOL-001: Haiku status-only agent — uses slim ~4K protocol",
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol-slim.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "validator": {
+      "comment": "TOKEN-TIERED-PROTOCOL-001: Haiku validation-only agent — uses slim ~4K protocol",
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol-slim.md", "label": "TURN PROTOCOL" }
+      ]
+    },
+    "workspace": {
+      "inject": [
+        { "path": "~/.claude/agents/turn-protocol.md", "label": "TURN PROTOCOL" },
+        { "path": "~/pap-workspace/ABOUT-ME.md", "label": "USER PROFILE" },
+        { "path": "~/pap-workspace/VOICE-AND-STYLE.md", "label": "VOICE AND STYLE" },
+        { "path": "~/pap-workspace/CAPABILITIES.md", "label": "CAPABILITIES REGISTRY" }
+      ]
+    }
+  }
+}

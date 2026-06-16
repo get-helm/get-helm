@@ -1,0 +1,89 @@
+# PAP DevOps Manifest
+# Used by the devops skill to know where each workspace deploys.
+# All production deploys must go through /devops deploy [workspace].
+# If workspace is not here: BLOCK — add it before deploying.
+
+# ── LIVE WORKSPACES ──────────────────────────────────────────────────────────
+
+options-helper:
+  domain: "options.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "/var/www/options-static"
+  backend_path: "/opt/options-backend"
+  restart_cmd: "systemctl restart options-backend"
+  health_check: "https://options.{{USER_DOMAIN}}"
+  expected_content: "Options"
+  resource_limit: "mem=512M,disk=1GB"
+  notes: "Frontend at /var/www/options-static. Backend at /opt/options-backend (port 5004). Sandbox: /var/www/options-sandbox + /opt/options-sandbox-backend. Always deploy to sandbox first."
+
+etf-tracker:
+  domain: "etf.{{USER_DOMAIN}}"
+  auth: "none"
+  path: "/var/www/etf-static"
+  restart_cmd: "nginx -s reload"
+  health_check: "https://etf.{{USER_DOMAIN}}"
+  expected_content: "ETF"
+  resource_limit: "mem=256M,disk=500MB"
+  notes: "Static HTML only. Open to public (no password). Manage endpoint uses separate 'ETF Manage Auth' vault entry."
+
+mission-control:
+  domain: "mission-control.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "/var/www/mission-control"
+  restart_cmd: "nginx -s reload"
+  health_check: "https://mission-control.{{USER_DOMAIN}}"
+  expected_content: "Mission Control"
+  resource_limit: "mem=256M,disk=500MB"
+  notes: "Live maintenance mode (deployed 2026-05-20). Static dashboard."
+
+status:
+  domain: "status.{{USER_DOMAIN}}"
+  auth: "none"
+  path: "/var/www/status-static"
+  restart_cmd: "nginx -s reload"
+  health_check: "https://status.{{USER_DOMAIN}}"
+  expected_content: "PAP Status"
+  resource_limit: "mem=128M,disk=200MB"
+  notes: "Open status page. Data served from VPS heartbeat endpoint (port 9876)."
+
+mockups:
+  domain: "mockups.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "/var/www/mockups"
+  restart_cmd: "nginx -s reload"
+  health_check: "https://mockups.{{USER_DOMAIN}}"
+  expected_content: ""
+  resource_limit: "mem=256M,disk=1GB"
+  notes: "Password-protected staging area for visual mockups."
+
+# ── DESIGNING — not yet deployed (placeholder entries) ───────────────────────
+
+daily-brief:
+  domain: "daily-brief.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "TBD"
+  restart_cmd: "TBD"
+  health_check: "TBD"
+  expected_content: "TBD"
+  resource_limit: "mem=256M,disk=500MB"
+  notes: "Status: designing. Not deployed. Fill in path/restart_cmd before first deploy."
+
+financial-review:
+  domain: "financial-review.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "TBD"
+  restart_cmd: "TBD"
+  health_check: "TBD"
+  expected_content: "TBD"
+  resource_limit: "mem=256M,disk=500MB"
+  notes: "Status: designing. Not deployed. Fill in path/restart_cmd before first deploy."
+
+pap-on-the-go:
+  domain: "pap-on-the-go.{{USER_DOMAIN}}"
+  auth: "{{USER_DOMAIN}} Site Auth"
+  path: "TBD"
+  restart_cmd: "TBD"
+  health_check: "TBD"
+  expected_content: "TBD"
+  resource_limit: "mem=256M,disk=500MB"
+  notes: "Status: designing. Not deployed. Fill in path/restart_cmd before first deploy."

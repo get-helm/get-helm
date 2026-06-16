@@ -1,0 +1,11 @@
+# Voice and Style
+# Set during onboarding. Edit anytime via @HELM set preference.
+PREFERRED_TONE=Conversational and brief. Clear and direct.
+RESPONSE_LENGTH_PREFERENCE=Short. Mobile-first. Lead with what matters.
+INFORMATION_STYLE=Decision-first. Lead with what to act on. Put details last.
+DISPLAY_MODE={{DISPLAY_MODE}}
+COLOR_PRIMARY=#4A7C59
+COLOR_ACCENT_1=#7C3AED
+COLOR_ACCENT_2=#D97706
+PUSHBACK_STYLE=Be direct — just say it
+VERBOSITY=highlights

@@ -1,0 +1,14 @@
+What happened
+The orchestrator feature — designed to break large multi-step tasks into sub-tasks — was misconfigured to trigger on nearly every message. Its routing gate fired when an ACK had either a >3 minute estimate OR 3+ numbered lines. Since agents routinely produce numbered lists and long estimates, almost every interaction got routed to the orchestrator instead of the actual agent. The orchestrator then tried to "expand" conversational questions into sub-tasks, produced garbage prompts, and the subprocess failed — leaving a false DELIVER with your original message text and then silence.
+This was compounded by the restart guard (requiring one verified change per restart) getting into a loop arguing with itself, and safe-restart.sh blocking repeatedly.
+What was changed
+One surgical edit to bot.js: lines 3500-3509 were commented out with // DISABLED:, which prevents the ACK-routing gate from ever triggering the orchestrator automatically. Manual orchestrator invocation still works. This change is live now.
+What needs to happen next
+The orchestrator routing logic needs a proper classifier before it's re-enabled — something that distinguishes "conversational question" from "multi-step task" before handing off. The current trigger (estimate + numbered lines) is too broad. This is an engineer task.
+The restart guard also needs a bypass path that doesn't require arguing through Discord. Right now if the bot is in a bad state, the guard makes recovery harder, not easier.
+What would have prevented the terminal work entirely
+Three things would have made this recoverable from Discord alone:
+1. A known-good rollback command you can paste from memory. Something like git revert HEAD --no-edit && safe-restart.sh --force that you keep in a pinned Discord message. Right now rollback requires knowing which commit broke things and navigating git history under pressure.
+2. A dead-man's-switch restart path. If Marvin is unresponsive for 5+ minutes, a separate launchd job on the VPS should be able to kill and restart bot.js via SSH — no Mac Mini terminal needed. This is TASK-069 (Terminal-free Marvin recovery) which has been Priority 1 since Session 10 and still isn't built.
+3. The grab-logs.sh script Marvin mentioned earlier. If that script actually works and produces a single file you can drag into Claude.ai, you could have diagnosed this without any terminal navigation. Worth verifying it works now, while things are calm.
+The honest summary: TASK-069 being unbuilt is why this required terminal work. Every incident since Session 8 that needed terminal intervention traces back to the same gap. It should be the next thing engineer builds before any other new features.

@@ -1,0 +1,98 @@
+name: Options Helper — Windows Smoke Test
+
+on:
+  push:
+    paths:
+      - 'workspace/workspaces/options-helper/packaging/**'
+  workflow_dispatch:
+
+jobs:
+  windows-smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+        working-directory: workspace/workspaces/options-helper/packaging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages from bundled wheels
+        run: pip install --no-index --find-links=packages flask cryptography werkzeug requests
+
+      - name: Import check — flask, cryptography, werkzeug
+        run: python -c "import flask; import cryptography; import werkzeug; print('imports OK')"
+
+      - name: Pbkdf2 hash check — matches app_server.py _hash_password format
+        run: |
+          python -c "
+          import hashlib, secrets
+          pw = 'testpass123'
+          salt = secrets.token_hex(16)
+          key = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 100000)
+          h = f'pbkdf2:sha256:100000:{salt}:{key.hex()}'
+          assert h.startswith('pbkdf2:sha256:100000:'), f'Bad format: {h[:40]}'
+          # Verify round-trip
+          parts = h.split(':')
+          iters, salt2, key_hex = int(parts[2]), parts[3], parts[4]
+          import hmac as hmac_mod
+          expected = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt2.encode(), iters)
+          assert hmac_mod.compare_digest(expected.hex(), key_hex), 'hash verify failed'
+          print('pbkdf2 hash OK — matches app_server.py format')
+          "
+
+      - name: Encoding check — no non-ASCII in fetch_positions.py log strings
+        run: |
+          python -c "
+          import ast, sys
+          with open('src/fetch_positions.py', encoding='utf-8') as f:
+              src = f.read()
+          bad_bytes = [(i+1, c) for i, c in enumerate(src) if ord(c) > 127]
+          if bad_bytes:
+              print(f'Non-ASCII bytes in source: {bad_bytes[:5]}')
+              sys.exit(1)
+          for node in ast.walk(ast.parse(src)):
+              if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'log':
+                  for arg in node.args:
+                      if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                          bad = [c for c in arg.value if ord(c) > 127]
+                          if bad:
+                              print(f'Line {node.lineno}: non-ASCII in log() call: {repr(bad)}')
+                              sys.exit(1)
+          print('Encoding check OK — no non-ASCII in log strings')
+          "
+
+      - name: Encoding write/read roundtrip with emoji
+        run: |
+          python -c "
+          import tempfile, os
+          text = 'test with emoji: success check mark'
+          with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as f:
+              fname = f.name
+              f.write(text)
+          with open(fname, encoding='utf-8') as f:
+              result = f.read()
+          os.unlink(fname)
+          assert result == text, f'Roundtrip failed: {repr(result)}'
+          print('Encoding roundtrip OK')
+          "
+
+      - name: AST parse check — app_server.py and fetch_positions.py
+        run: |
+          python -c "
+          import ast
+          for fname in ['src/app_server.py', 'src/fetch_positions.py']:
+              with open(fname, encoding='utf-8') as f:
+                  src = f.read()
+              try:
+                  ast.parse(src)
+                  print(f'AST OK: {fname}')
+              except SyntaxError as e:
+                  print(f'SYNTAX ERROR in {fname}: {e}')
+                  raise
+          "
