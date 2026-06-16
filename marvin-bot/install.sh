@@ -4,7 +4,7 @@
 #   OR:  bash install.sh
 #
 # Detects OS, installs prerequisites, clones/updates the HELM repo to ~/helm,
-# runs npm install, then shows the Claude Desktop Cowork install prompt URL.
+# runs npm install, then shows the Claude Desktop Code tab → Local install prompt URL.
 
 set -euo pipefail
 

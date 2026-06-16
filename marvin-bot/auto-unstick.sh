@@ -2,12 +2,14 @@
 # auto-unstick.sh
 # Runs every 15 min via cron. Finds truly stuck threads (gave up auto-resume
 # or stuck > 10 min with no agent PID), fixes them, and notifies #pap-improvements.
+# Also detects frozen agents: live PID + age >20min + CPU <1% (FROZEN-AGENT-DETECT-001)
 
 CHANNEL_STATE_DIR="/Users/{{USER_HOME}}/helm-workspace/channel-state"
 NOTIFY_CHANNEL="{{USER_CHANNEL_HELM_STATUS}}"  # helm-status — only for gave-up alerts
 NOW_SEC=$(date +%s)
 FIXED=()
 GAVE_UP=()
+FROZEN=()
 
 for f in "$CHANNEL_STATE_DIR"/*.json; do
   [[ -f "$f" ]] || continue
@@ -34,6 +36,36 @@ except:
   ATTEMPTS=$(echo "$PARSED" | cut -d'|' -f3)
   AGE=$(echo "$PARSED" | cut -d'|' -f4)
 
+  # --- Frozen-agent detection: live PID + old + idle CPU ---
+  if [[ "$PHASE" == "ack" || "$PHASE" == "update" ]] && \
+     [[ "$PID" != "None" && -n "$PID" ]] && \
+     [[ "$AGE" -ge 20 ]]; then
+    # Check if PID is alive
+    if kill -0 "$PID" 2>/dev/null; then
+      # Get CPU usage (macOS: ps -p PID -o %cpu=)
+      CPU=$(ps -p "$PID" -o %cpu= 2>/dev/null | tr -d ' ')
+      IS_IDLE=$(awk "BEGIN { print (\"$CPU\" + 0 < 1.0) ? \"yes\" : \"no\" }" 2>/dev/null)
+      if [[ "$IS_IDLE" == "yes" ]]; then
+        kill "$PID" 2>/dev/null
+        sleep 1
+        kill -9 "$PID" 2>/dev/null
+        python3 -c "
+import json
+f = '$f'
+d = json.load(open(f))
+d['lastAgentMsgPhase'] = 'deliver'
+d['agentPid'] = None
+d['agentSpawnedAt'] = None
+if 'checkpoint' in d and d['checkpoint']:
+    d['checkpoint']['resumeAttempts'] = 0
+open(f, 'w').write(json.dumps(d, indent=2))
+"
+        FROZEN+=("$CHANNEL_ID (PID=$PID, age=${AGE}m, CPU=${CPU}% — killed+cleared)")
+        continue
+      fi
+    fi
+  fi
+
   # Only act if stuck (ack/update with no agent PID)
   [[ "$PHASE" == "ack" || "$PHASE" == "update" ]] || continue
   [[ "$PID" == "None" || -z "$PID" ]] || continue
@@ -59,9 +91,12 @@ open(f, 'w').write(json.dumps(d, indent=2))
   fi
 done
 
-TOTAL=$(( ${#FIXED[@]} + ${#GAVE_UP[@]} ))
+TOTAL=$(( ${#FIXED[@]} + ${#GAVE_UP[@]} + ${#FROZEN[@]} ))
 
 if [[ ${#GAVE_UP[@]} -gt 0 ]]; then
   ~/marvin-bot/pm-log-write.sh "auto-unstick" "GAVE_UP: ${GAVE_UP[*]} — needs manual re-send. PM: surface to user if still stuck at next sweep."
+fi
+if [[ ${#FROZEN[@]} -gt 0 ]]; then
+  ~/marvin-bot/pm-log-write.sh "auto-unstick" "FROZEN-AGENT killed: ${FROZEN[*]} — PID alive but idle >20min, force-cleared."
 fi
 # All auto-unstick events → pm-log only. PM escalates if action needed.

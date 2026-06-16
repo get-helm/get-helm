@@ -1643,7 +1643,13 @@ function runClaude(prompt, channelId, agentKey, extraEnv, agentInstructions, opt
               }
               if (autoContCount < 1 && !isAutomatedChannel) {
                 const ackTs = exitState.ackTimestampMs ? new Date(exitState.ackTimestampMs).toISOString() : 'unknown';
-                const contPrompt = `[Auto-continuation — B-04]\nYou ACKed at ${ackTs} and exited without posting DELIVER or BLOCK. Complete the work and post ✅ DELIVER now — or if blocked, post ⏸ BLOCK with reason and two alternatives tried.`;
+                // CONTINUATION-PROMPT-ENRICH-001: inject checkpoint notes + last UPDATE so continuation agent
+                // has enough context to reconstruct and complete the work rather than starting blind.
+                const cpNotes = (exitState.checkpoint && exitState.checkpoint.notes) ? exitState.checkpoint.notes.slice(0, 500) : '';
+                const lastUpdate = exitState.b02LastUpdate ? exitState.b02LastUpdate.slice(0, 300) : '';
+                const cpContext = cpNotes ? `\nCheckpoint notes: ${cpNotes}` : '';
+                const updateContext = lastUpdate ? `\nLast UPDATE posted: ${lastUpdate}` : '';
+                const contPrompt = `[Auto-continuation — B-04]\nYou ACKed at ${ackTs} and exited without posting DELIVER or BLOCK. Complete the work and post ✅ DELIVER now — or if unable to complete, post ⏸ BLOCK with reason and two alternatives tried. Never exit silently.${cpContext}${updateContext}`;
                 exitState.autoContCount = 1;
                 writeChannelState(channelId, exitState);
                 // Spawn continuation after short delay so exit cleanup finishes
@@ -1655,7 +1661,10 @@ function runClaude(prompt, channelId, agentKey, extraEnv, agentInstructions, opt
           } catch {}
         }
         // Model transparency: verify which model actually served this turn
-        if (modelFlag) {
+        // MODEL-VERIFY-OVERHEAD-001: skip when concurrent agents are active — ambiguous attribution
+        // anyway, and scanning 100s of JSONL files with 5 concurrent agents = 1273 unnecessary scans/day.
+        // MODEL-VERIFY-FALSEPOS-001: ambiguous flag already suppresses alerts; skipping at source reduces I/O.
+        if (modelFlag && activeClaudeProcesses <= 1) {
           setImmediate(() => {
             try {
               const mm = detectModelMismatch(modelFlag, modelCheckStartedAt);
@@ -1924,6 +1933,10 @@ function runClaude(prompt, channelId, agentKey, extraEnv, agentInstructions, opt
             .catch(() => {});
           appendEvent('orphaned_ack_ping', channelId, null, null, null, { silenceMin, agentKey: orphanAckAgent });
           trackViolation('orphaned_ack', `ack-only silence=${silenceMin}min agent=${orphanAckAgent}`);
+          // ORPHANED-ACK-INJECT-001: write lastValidationError so next spawn sees deterrent
+          s.lastValidationError = `ORPHANED-ACK: Your previous turn posted 👍 ACK but never posted ✅ DELIVER or ⏸ BLOCK. Every turn that starts with ACK MUST end with DELIVER or BLOCK — never exit silently. If work is done, post DELIVER immediately. If blocked, post BLOCK with two alternative approaches tried.`;
+          s.lastValidationErrorAt = Date.now();
+          writeChannelState(channelId, s);
         }
       }
 
@@ -2564,7 +2577,17 @@ async function createDiscordThread(channelId, messageId, threadName) {
       let data = '';
       res.on('data', d => data += d);
       res.on('end', () => {
-        try { resolve(JSON.parse(data).id || null); } catch { resolve(null); }
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.id) { resolve(parsed.id); }
+          else {
+            // Log Discord error code/message for diagnostics (LOG-THREAD-CREATE-ERROR-001)
+            const errCode = parsed.code || res.statusCode;
+            const errMsg = parsed.message || 'unknown';
+            console.error(`[createThread] Discord rejected thread creation: HTTP ${res.statusCode} code=${errCode} message="${errMsg}"`);
+            resolve(null);
+          }
+        } catch { resolve(null); }
       });
     });
     req.on('error', (e) => { console.error('[createThread] POST error:', e.message); resolve(null); });
@@ -2941,6 +2964,33 @@ function setConfigValue(key, value) {
   }
 }
 function isOnboardingComplete() { return getConfigValue('ONBOARDING_COMPLETED') === 'true'; }
+// ONBOARD-TIMEZONE-001: the user's saved IANA timezone (falls back to Pacific if unset/invalid).
+// Used for quiet-hours boundaries, the daily briefing schedule, and status timestamps so the
+// system runs in the user's local time instead of a hardcoded Pacific zone.
+function getUserTimezone() {
+  const tz = getConfigValue('TIMEZONE');
+  if (tz) { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch (_) {} }
+  return 'America/Los_Angeles';
+}
+// ONBOARD-QUIET-HOURS-ENFORCE-001: returns true when the current local time falls within the
+// user's configured quiet window. Call before any proactive send to suppress it during quiet hours.
+// Window is interpreted in getUserTimezone(). Overnight windows (22:00-07:00) are handled.
+function isWithinQuietHours() {
+  const start = getConfigValue('NOTIFICATION_QUIET_HOURS_START');
+  if (!start || start === 'none') return false;
+  const end = getConfigValue('NOTIFICATION_QUIET_HOURS_END') || '07:00';
+  const tz = getUserTimezone();
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+    const parts = Object.fromEntries(fmt.formatToParts(new Date()).map(p => [p.type, p.value]));
+    const nowMins = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    const startMins = startH * 60 + startM;
+    const endMins = endH * 60 + endM;
+    return startMins > endMins ? (nowMins >= startMins || nowMins < endMins) : (nowMins >= startMins && nowMins < endMins);
+  } catch (e) { console.error('[quiet-hours] error:', e.message); return false; }
+}
 function getOnboardingStep()    { return getConfigValue('ONBOARDING_STEP') || null; }
 function setOnboardingStep(s)   { setConfigValue('ONBOARDING_STEP', s); }
 
@@ -2954,7 +3004,10 @@ const ONBOARDING_STEPS = {
   stage2_s2d:      { text: "I'll warn you before you hit Claude's weekly limit. Alert me at:", buttons: [{ label: '70%', id: 'onboard_s2d_70' }, { label: '85%', id: 'onboard_s2d_85' }, { label: '95%', id: 'onboard_s2d_95' }] },
   stage2_s2e_date: { text: 'Date format:', buttons: [{ label: 'MM/DD/YYYY (US)', id: 'onboard_s2e_date_mdy' }, { label: 'DD/MM/YYYY (EU)', id: 'onboard_s2e_date_dmy' }] },
   stage2_s2e_time: { text: 'Time format:', buttons: [{ label: '12-hour (2:30 PM)', id: 'onboard_s2e_time_12' }, { label: '24-hour (14:30)', id: 'onboard_s2e_time_24' }] },
-  stage2_s2e_week: { text: 'Week starts on:', buttons: [{ label: 'Monday', id: 'onboard_s2e_week_mon' }, { label: 'Sunday', id: 'onboard_s2e_week_sun' }] }
+  stage2_s2e_week: { text: 'Week starts on:', buttons: [{ label: 'Monday', id: 'onboard_s2e_week_mon' }, { label: 'Sunday', id: 'onboard_s2e_week_sun' }] },
+  // ONBOARD-TIMEZONE-001: collect timezone so quiet-hours + briefings run in the user's zone.
+  // Picker offers common US/EU zones; "Other" prompts the user to type their city/zone.
+  stage2_s2tz:     { text: "What's your timezone? (so quiet hours and your daily briefing run at the right local time)", buttons: [{ label: 'US Eastern', id: 'onboard_s2tz_et' }, { label: 'US Central', id: 'onboard_s2tz_ct' }, { label: 'US Mountain', id: 'onboard_s2tz_mt' }, { label: 'US Pacific', id: 'onboard_s2tz_pt' }, { label: 'Other — type your city/zone', id: 'onboard_s2tz_other' }] }
 };
 
 async function sendOnboardingQuestion(channel, step) {
@@ -2968,9 +3021,114 @@ async function sendOnboardingQuestion(channel, step) {
   } catch (e) { console.error(`[onboarding] step ${step} send error:`, e.message); }
 }
 
+// ONBOARD-TIMEZONE-001: channels awaiting a typed-in timezone (the "Other" picker option).
+const awaitingTimezoneInput = new Set();
+// Resolve a user-typed timezone to a valid IANA zone. Accepts a full IANA name (validated
+// via Intl) or a handful of common city aliases. Returns the IANA string, or null if unknown.
+function resolveTimezoneInput(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+  // Try as a literal IANA zone first.
+  try { new Intl.DateTimeFormat('en-US', { timeZone: s }); return s; } catch (_) {}
+  const aliases = {
+    'london': 'Europe/London', 'paris': 'Europe/Paris', 'berlin': 'Europe/Berlin',
+    'madrid': 'Europe/Madrid', 'rome': 'Europe/Rome', 'dublin': 'Europe/Dublin',
+    'amsterdam': 'Europe/Amsterdam', 'tokyo': 'Asia/Tokyo', 'singapore': 'Asia/Singapore',
+    'hong kong': 'Asia/Hong_Kong', 'hongkong': 'Asia/Hong_Kong', 'sydney': 'Australia/Sydney',
+    'mumbai': 'Asia/Kolkata', 'delhi': 'Asia/Kolkata', 'dubai': 'Asia/Dubai',
+    'toronto': 'America/Toronto', 'new york': 'America/New_York', 'nyc': 'America/New_York',
+    'chicago': 'America/Chicago', 'denver': 'America/Denver', 'los angeles': 'America/Los_Angeles',
+    'la': 'America/Los_Angeles', 'sao paulo': 'America/Sao_Paulo', 'mexico city': 'America/Mexico_City',
+  };
+  return aliases[s.toLowerCase()] || null;
+}
+// ONBOARD-CONNECTOR-CLAUDE-NATIVE-001: in-flow connector step — finalize onboarding once a
+// briefing has been generated (or graceful-degrade if the user skips connectors).
+// COMPLETE_MSG no longer defers the briefing; it confirms setup and routes to #general.
+function onboardingCompleteMsg() {
+  return `Good. That's your setup done.\n\n→ Health checks running every 6 hours\n→ Nightly backup — 1am\n\nNow switch to your daily machine or phone and open Discord — that's where ${AGENT_NAME} lives. Go to **#general** to start using it.`;
+}
+
+// Post the connector provider-ask. This is a Claude-native connector (Settings → Connectors),
+// so there is NO OAuth backend to build — we just walk the user through the click-path.
+async function sendConnectorStep(channel) {
+  setConfigValue('ONBOARDING_STEP', 'connector');
+  await channel.send({
+    content: "Last step — let's connect a data source so I can give you a real first briefing.\n\nWhich would you like to connect first? (I never assume — your pick.)",
+    components: [{ type: 1, components: [
+      { type: 2, style: 1, label: 'Calendar', custom_id: 'onboard_conn_calendar' },
+      { type: 2, style: 1, label: 'Email', custom_id: 'onboard_conn_email' },
+      { type: 2, style: 2, label: 'Skip for now', custom_id: 'onboard_conn_skip' }
+    ] }]
+  }).catch(e => console.error('[onboarding] connector-step send error:', e.message));
+}
+
+// Walk the user through the Claude-native Settings → Connectors click-path for a provider,
+// then offer to run a tool-visibility test ("what's on my calendar?") and produce a briefing.
+async function sendConnectorWalkthrough(channel, provider) {
+  setConfigValue('ONBOARDING_CONNECTOR_PROVIDER', provider);
+  const label = provider === 'email' ? 'email' : 'calendar';
+  await channel.send(
+    `Here's how to connect your ${label} (these are Claude-native connectors — nothing to install):\n\n` +
+    `1. Open **Claude** → click your name (bottom-left) → **Settings**\n` +
+    `2. Go to **Connectors**\n` +
+    `3. Find your ${label} provider (e.g. Google ${provider === 'email' ? 'Gmail' : 'Calendar'}) and click **Connect**\n` +
+    `4. Approve the access prompt in your browser\n\n` +
+    `When that's done, click below and I'll confirm I can see it, then build your first briefing.`
+  ).catch(() => {});
+  await channel.send({
+    content: 'Ready?',
+    components: [{ type: 1, components: [
+      { type: 2, style: 1, label: "I've connected it — test now", custom_id: 'onboard_conn_test' },
+      { type: 2, style: 2, label: 'Skip for now', custom_id: 'onboard_conn_skip' }
+    ] }]
+  }).catch(() => {});
+}
+
+// Finalize onboarding: mark complete, post the completion message, fire the single tour.
+async function finalizeOnboarding(channel, briefingDelivered) {
+  setConfigValue('ONBOARDING_STEP', 'complete');
+  setConfigValue('ONBOARDING_COMPLETED', 'true');
+  awaitingTimezoneInput.delete(channel.id);
+  await channel.send(onboardingCompleteMsg()).catch(() => {});
+  if (!briefingDelivered) {
+    // Graceful degrade — never silently empty. State what's missing + how to connect.
+    await channel.send(
+      "Heads up: your daily briefing is empty right now because no calendar or email is connected yet.\n" +
+      "When you're ready, type **connect** in any channel and I'll walk you through it (Settings → Connectors)."
+    ).catch(() => {});
+  }
+  // ONBOARD-TOUR-ORDER-001: the ONE tour fire for a new user — after Stage-2 + connector step.
+  setTimeout(() => sendTourStep(channel, 0).catch(() => {}), 2000);
+}
+
 async function handleOnboardingButton(customId, channel) {
-  const COMPLETE_MSG = "Good. That's your setup done.\n\n→ Daily briefing starts tomorrow morning at 8am\n→ Nightly backup — 1am\n→ System health check — every 6 hours\n\nHead to #general to start using me, or ask me anything now.";
-  function save(k, v, next) { setConfigValue(k, v); setOnboardingStep(next); return sendOnboardingQuestion(channel, next); }
+  // ONBOARD-PREF-WIREUP-001: route behavioral prefs to the correct destination file
+  // (VOICE-AND-STYLE.md / ABOUT-ME.md) via preferences-update.sh in addition to CONFIG.md.
+  // The two paths use the same mapping so they can never diverge.
+  const PREF_WIREUP = {
+    'VERBOSITY':        { name: 'verbosity',        transform: v => ({ 'concise': 'brief', 'detailed': 'detailed' }[v] || v) },
+    'DISPLAY_MODE':     { name: 'display_mode',     transform: v => v },
+    'PUSHBACK_STYLE':   { name: 'pushback_volume',  transform: v => v },
+    'PREFERRED_TONE':   { name: 'tone',             transform: v => v },
+    'PROACTIVE_OUTREACH': { name: 'activity_reporting', transform: v => ({ 'often': 'detailed', 'daily': 'brief', 'urgent': 'silent' }[v] || v) },
+  };
+  function save(k, v, next) {
+    setConfigValue(k, v);
+    const wireup = PREF_WIREUP[k];
+    if (wireup) {
+      const prefScript = path.join(config.HELM_CONFIG_DIR, '../marvin-bot/preferences-update.sh');
+      try {
+        const prefVal = wireup.transform(v);
+        const { execFileSync: efs } = require('child_process');
+        efs('bash', [prefScript, wireup.name, prefVal, channel.id || ''], { timeout: 5000, stdio: 'pipe' });
+        console.log(`[onboarding] pref-wireup: ${k}=${v} → ${wireup.name}=${prefVal}`);
+      } catch (e) { console.error(`[onboarding] pref-wireup error for ${k}:`, e.message); }
+    }
+    setOnboardingStep(next); return sendOnboardingQuestion(channel, next);
+  }
+  // ONBOARD-TIMEZONE-001: persist TIMEZONE then advance to the connector step.
+  function saveTz(tz) { setConfigValue('TIMEZONE', tz); return sendConnectorStep(channel); }
   const map = {
     'onboard_q1_highlights':    () => save('VERBOSITY', 'concise', 'stage1_q2'),
     'onboard_q1_fullpicture':   () => save('VERBOSITY', 'detailed', 'stage1_q2'),
@@ -2986,15 +3144,51 @@ async function handleOnboardingButton(customId, channel) {
     'onboard_s2c_often':        () => save('PROACTIVE_OUTREACH', 'often', 'stage2_s2d'),
     'onboard_s2c_daily':        () => save('PROACTIVE_OUTREACH', 'daily', 'stage2_s2d'),
     'onboard_s2c_urgent':       () => save('PROACTIVE_OUTREACH', 'urgent', 'stage2_s2d'),
-    'onboard_s2d_70':           () => save('USAGE_WARNING_THRESHOLD', '70', 'stage2_s2e_date'),
-    'onboard_s2d_85':           () => save('USAGE_WARNING_THRESHOLD', '85', 'stage2_s2e_date'),
-    'onboard_s2d_95':           () => save('USAGE_WARNING_THRESHOLD', '95', 'stage2_s2e_date'),
+    // ONBOARD-PREF-WIREUP-001: s2d → s2tz directly (locale auto-detects date/time/week at install)
+    'onboard_s2d_70':           () => save('USAGE_WARNING_THRESHOLD', '70', 'stage2_s2tz'),
+    'onboard_s2d_85':           () => save('USAGE_WARNING_THRESHOLD', '85', 'stage2_s2tz'),
+    'onboard_s2d_95':           () => save('USAGE_WARNING_THRESHOLD', '95', 'stage2_s2tz'),
+    // Legacy date/time/week handlers kept for mid-session recovery (will not be navigated to for new users)
     'onboard_s2e_date_mdy':     () => save('DATE_FORMAT', 'MM/DD/YYYY', 'stage2_s2e_time'),
     'onboard_s2e_date_dmy':     () => save('DATE_FORMAT', 'DD/MM/YYYY', 'stage2_s2e_time'),
     'onboard_s2e_time_12':      () => save('TIME_FORMAT', '12h', 'stage2_s2e_week'),
     'onboard_s2e_time_24':      () => save('TIME_FORMAT', '24h', 'stage2_s2e_week'),
-    'onboard_s2e_week_mon':     async () => { setConfigValue('WEEK_STARTS_ON', 'monday'); setConfigValue('ONBOARDING_STEP', 'complete'); setConfigValue('ONBOARDING_COMPLETED', 'true'); await channel.send(COMPLETE_MSG); },
-    'onboard_s2e_week_sun':     async () => { setConfigValue('WEEK_STARTS_ON', 'sunday'); setConfigValue('ONBOARDING_STEP', 'complete'); setConfigValue('ONBOARDING_COMPLETED', 'true'); await channel.send(COMPLETE_MSG); }
+    // ONBOARD-TIMEZONE-001: week → timezone question (not straight to completion).
+    'onboard_s2e_week_mon':     () => save('WEEK_STARTS_ON', 'monday', 'stage2_s2tz'),
+    'onboard_s2e_week_sun':     () => save('WEEK_STARTS_ON', 'sunday', 'stage2_s2tz'),
+    // Timezone picks → save IANA zone → connector step.
+    'onboard_s2tz_et':          () => saveTz('America/New_York'),
+    'onboard_s2tz_ct':          () => saveTz('America/Chicago'),
+    'onboard_s2tz_mt':          () => saveTz('America/Denver'),
+    'onboard_s2tz_pt':          () => saveTz('America/Los_Angeles'),
+    'onboard_s2tz_other':       async () => {
+      setOnboardingStep('stage2_s2tz_input');
+      awaitingTimezoneInput.add(channel.id);
+      await channel.send("Type your city or IANA timezone (e.g. `Europe/London`, `Asia/Tokyo`, or just `London`) and I'll set it.").catch(() => {});
+    },
+    // ONBOARD-CONNECTOR-CLAUDE-NATIVE-001: connector step buttons.
+    'onboard_conn_calendar':    () => sendConnectorWalkthrough(channel, 'calendar'),
+    'onboard_conn_email':       () => sendConnectorWalkthrough(channel, 'email'),
+    'onboard_conn_skip':        () => finalizeOnboarding(channel, false),
+    'onboard_conn_test':        async () => {
+      // Tool-visibility test + real first briefing. Enqueue an actual agent run so the user
+      // never leaves onboarding without a briefing. The prompt asks the agent to confirm the
+      // connector is visible ("what's on my calendar?") and produce a short morning briefing;
+      // if the tool isn't actually connected the agent says exactly what's missing.
+      await channel.send("Checking I can see your connector and building your first briefing — one moment…").catch(() => {});
+      setConfigValue('ONBOARDING_FIRST_BRIEFING', 'pending');
+      const provider = getConfigValue('ONBOARDING_CONNECTOR_PROVIDER') || 'calendar';
+      const briefingPrompt =
+        `The user just connected their ${provider} via Claude-native Connectors during onboarding. ` +
+        `First, verify the connector tools are actually visible to you (e.g. try "what's on my calendar today?"). ` +
+        `If the tools ARE visible, produce a short, friendly first daily briefing (today's calendar / key emails / anything time-sensitive). ` +
+        `If the tools are NOT visible yet, say exactly that and tell them to finish connecting in Claude → Settings → Connectors, then type "connect" to retry. ` +
+        `Keep it brief and welcoming — this is their very first briefing.`;
+      try {
+        await enqueueClaudeRun(briefingPrompt, channel.id, 'help', null, loadAgentInstructions('help'), { skipAckTimer: true });
+      } catch (e) { console.error('[onboarding] first-briefing enqueue error:', e.message); }
+      await finalizeOnboarding(channel, true);
+    }
   };
   const fn = map[customId];
   if (!fn) return false;
@@ -3363,6 +3557,46 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+// ZOMBIE-PROCESS-POST-DELIVER-001: scan every 5 min for claude PIDs still alive
+// after their channel entered phase=deliver (zombie lock detection).
+// Kills the process and clears agentPid so new messages can be handled.
+setInterval(() => {
+  try {
+    const stateFiles = fs.readdirSync(CHANNEL_STATE_DIR).filter(f => f.endsWith('.json'));
+    const now = Date.now();
+    const DELIVER_ZOMBIE_MS = 10 * 60 * 1000; // 10 min past deliver = zombie
+    for (const f of stateFiles) {
+      try {
+        const s = JSON.parse(fs.readFileSync(path.join(CHANNEL_STATE_DIR, f), 'utf8'));
+        if (!s.agentPid) continue;
+        if (s.lastAgentMsgPhase !== 'deliver') continue;
+        const savedAt = s.savedAt || 0;
+        if ((now - savedAt) < DELIVER_ZOMBIE_MS) continue;
+        // PID alive past 10 min post-deliver — zombie
+        let alive = false;
+        try { process.kill(s.agentPid, 0); alive = true; } catch {}
+        if (!alive) {
+          // PID already gone — just clear the stale state
+          s.agentPid = null;
+          fs.writeFileSync(path.join(CHANNEL_STATE_DIR, f), JSON.stringify(s, null, 2));
+          continue;
+        }
+        // Kill the zombie
+        try { process.kill(s.agentPid, 'SIGTERM'); } catch {}
+        const killLine = `[${new Date().toISOString()}] auto-killed stuck agent PID ${s.agentPid} in channel ${s.channelId} (${Math.round((now - savedAt) / 60000)} min post-deliver)\n`;
+        console.log('[zombie-scanner]', killLine.trim());
+        try { fs.appendFileSync(path.join(WORKDIR, 'system', 'helm-audit.log'), killLine); } catch {}
+        appendEvent('zombie_pid_killed', s.channelId, null, null, null, { pid: s.agentPid, minsSinceDeliver: Math.round((now - savedAt) / 60000) });
+        s.agentPid = null;
+        activeChannelAgents.delete(s.channelId);
+        fs.writeFileSync(path.join(CHANNEL_STATE_DIR, f), JSON.stringify(s, null, 2));
+      } catch {}
+    }
+  } catch (zombieErr) {
+    console.error('[zombie-scanner] error:', zombieErr.message);
+  }
+}, 5 * 60 * 1000);
+
 // ─── CHANNEL STATE INIT ───────────────────────────────────────────────────
 fs.mkdirSync(CHANNEL_STATE_DIR, { recursive: true });
 fs.mkdirSync(PAP_IMAGES_DIR, { recursive: true });
@@ -3448,8 +3682,16 @@ function hasRecentUserActivity(windowMs) {
 }
 
 async function runPMSweep() {
-  if (activeChannelAgents.has(ENGINEER_CHANNEL) || activeChannelAgents.has(PAP_IMPROVEMENTS_CHANNEL)) {
-    console.log('[pm-sweep] skipping — PM or engineer already active');
+  // Gate: skip if PM already active in any PM channel, OR if user-triggered spawn active in helm-improvements
+  // (prevents scheduled-vs-user collision that causes SPAWN_DEDUP errors — ERROR-FALSE-POSITIVE-001)
+  if (activeChannelAgents.has(ENGINEER_CHANNEL) || activeChannelAgents.has(PAP_IMPROVEMENTS_CHANNEL) || activeChannelAgents.has(PAP_CHAT_CHANNEL)) {
+    console.log('[pm-sweep] skipping — PM/engineer/user-spawn already active');
+    return;
+  }
+  // ONBOARD-QUIET-HOURS-ENFORCE-001: suppress proactive sweeps during user's quiet window.
+  // Work-queued sweeps still run (engineer tasks don't post to Discord proactively).
+  if (isWithinQuietHours() && !hasProactiveWork()) {
+    console.log('[pm-sweep] skipping — quiet hours active, no queued work');
     return;
   }
   // Adaptive interval: 5 min when work queue has active items, 15 min when user active, 20 min idle
@@ -4021,13 +4263,17 @@ function buildRecoveryContent() {
           { type: 2, style: 4, label: '⏮ Emergency Rollback', custom_id: 'recover_rollback' }
         ]
       },
-      {
-        type: 1,
-        components: [
-          { type: 2, style: 1, label: '🤖 Get AI Help → Claude', custom_id: 'recovery_get_ai_prompt' },
-          { type: 2, style: 5, label: '🛡️ Recovery Webpage', url: `https://${process.env.HELM_STATUS_HOST || 'status.{{USER_DOMAIN}}'}/recovery` }
-        ]
-      }
+      (() => {
+        const rHost = process.env.HELM_STATUS_HOST || '';
+        const isValidHost = rHost && !rHost.includes('{{');
+        return {
+          type: 1,
+          components: [
+            { type: 2, style: 1, label: '🤖 Get AI Help → Claude', custom_id: 'recovery_get_ai_prompt' },
+            ...(isValidHost ? [{ type: 2, style: 5, label: '🛡️ Recovery Webpage', url: `https://${rHost}/recovery` }] : [])
+          ]
+        };
+      })()
     ]
   };
 }
@@ -4217,9 +4463,11 @@ client.once('clientReady', async () => {
     }
   } catch (e) { console.error('[tour] intent check error:', e.message); }
 
-  // ─── TOUR-FIRST-USER-001: first-boot tour in #general ───────────────────
+  // ─── TOUR-FIRST-USER-001 / ONBOARD-TOUR-ORDER-001: first-boot welcome in #general ──
   // The installer is already a guild member, so GUILD_MEMBER_ADD never fires for them.
   // Detect first boot: flag file absent AND no channel-state files exist yet.
+  // The tour fires ONCE, AFTER Stage-1 + Stage-2 (see handleOnboardingButton). During
+  // fresh onboarding we ONLY post a welcome that invites the user to begin setup.
   setTimeout(async () => {
     try {
       const firstBootFlag = path.join(config.WORKDIR, 'system', '.first-boot-tour.flag');
@@ -4228,10 +4476,16 @@ client.once('clientReady', async () => {
         if (stateFiles.length < 3) {
           const generalCh = GENERAL_CHANNEL ? (client.channels.cache.get(GENERAL_CHANNEL) || await client.channels.fetch(GENERAL_CHANNEL).catch(() => null)) : null;
           if (generalCh) {
-            await generalCh.send('👋 Welcome! HELM is online. Here\'s a quick tour to get you started:').catch(() => {});
-            await sendTourStep(generalCh, 0).catch(() => {});
+            if (isOnboardingComplete()) {
+              // Already onboarded (e.g. flag reset) — safe to show the tour.
+              await generalCh.send('👋 Welcome back! HELM is online. Here\'s a quick tour:').catch(() => {});
+              await sendTourStep(generalCh, 0).catch(() => {});
+            } else {
+              // Fresh onboarding: invite setup, do NOT launch the tour yet.
+              await generalCh.send('👋 Welcome! HELM is online. Say hi here and I\'ll set up your preferences — takes about a minute. The quick tour comes right after.').catch(() => {});
+            }
             fs.writeFileSync(firstBootFlag, new Date().toISOString());
-            console.log('[first-boot-tour] Sent first-boot tour to #general');
+            console.log('[first-boot-tour] Sent first-boot welcome to #general');
           }
         } else {
           // Write flag so we don't check again — existing server, not a new install
@@ -4747,10 +5001,12 @@ client.on('raw', async (event) => {
         if (genId) {
           const genCh = await client.channels.fetch(genId).catch(() => null);
           if (genCh) {
-            await genCh.send(`✅ ${AGENT_NAME} is set up and ready — see each channel for a quick intro. Just type in any channel to get started.`).catch(() => {});
-            // TOUR-FIRST-USER-001: post tour on auto-init
+            await genCh.send(`✅ ${AGENT_NAME} is set up and ready. Say hi here and I'll set up your preferences — takes about a minute. The quick tour comes right after.`).catch(() => {});
+            // ONBOARD-TOUR-ORDER-001: tour fires ONCE after Stage-2 — not on auto-init.
+            // Only post the tour here if onboarding is already complete (re-init of an
+            // existing install); a fresh user gets the tour after Stage-2 completion.
             const tourFlag = path.join(config.WORKDIR, 'system', '.first-boot-tour.flag');
-            if (!fs.existsSync(tourFlag)) {
+            if (isOnboardingComplete() && !fs.existsSync(tourFlag)) {
               await genCh.send('👋 Here\'s a quick tour to get you started:').catch(() => {});
               await sendTourStep(genCh, 0).catch(() => {});
               fs.writeFileSync(tourFlag, new Date().toISOString());
@@ -4772,7 +5028,12 @@ client.on('raw', async (event) => {
       recentMemberAdds.add(newUser.id);
       setTimeout(() => recentMemberAdds.delete(newUser.id), 5 * 60 * 1000);
       appendEvent('member_add', null, newUser.id, null, null);
-      startTourForNewMember(newUser.id).catch(e => console.error('[tour] member-add error:', e.message));
+      // ONBOARD-TOUR-ORDER-001: tour fires ONCE after Stage-2 (handleOnboardingButton),
+      // never before preferences. Only auto-tour a new member if onboarding is already
+      // complete for this install; otherwise the post-Stage-2 fire is the only tour.
+      if (isOnboardingComplete()) {
+        startTourForNewMember(newUser.id).catch(e => console.error('[tour] member-add error:', e.message));
+      }
     }
     return;
   }
@@ -5637,11 +5898,21 @@ client.on('raw', async (event) => {
               fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), cpLine);
               fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b05EnLine);
             } catch {}
+            // EMPTY-NOTES-INJECT-001: write lastValidationError so next spawn writes real notes
+            const vsEcn = readChannelState(chId);
+            vsEcn.lastValidationError = 'B-05: Your checkpoint notes were empty or missing at resume time. After ACK, write checkpoint immediately with notes containing your actual plan (≥10 chars). Empty notes = context lost on restart — bot resumes blindly.';
+            vsEcn.lastValidationErrorAt = Date.now();
+            writeChannelState(chId, vsEcn);
           }
           // FIX-RESTART-002 (B-03): warn when agent resumes with no task plan (< 2 steps)
           if (s.checkpoint && (s.checkpoint.resumeAttempts || 0) > 0 && (s.checkpoint.taskPlan || []).length < 2) {
             const tpLine = `[${new Date().toISOString()}] MISSING_TASK_PLAN channel=${chId} resumeAttempts=${s.checkpoint.resumeAttempts||0}\n`;
             try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), tpLine); } catch {}
+            // MISSING-PLAN-INJECT-001: write lastValidationError so next spawn writes taskPlan
+            const vsMtp = readChannelState(chId);
+            vsMtp.lastValidationError = 'B-03: Your checkpoint taskPlan was missing or had fewer than 2 steps at resume time. After ACK, write checkpoint immediately with taskPlan: ["1. step", "2. step", ...] so auto-resume knows exactly where to continue.';
+            vsMtp.lastValidationErrorAt = Date.now();
+            writeChannelState(chId, vsMtp);
           }
           // B-05: detect agent resuming with non-empty checkpoint notes — log so PM can verify notes were used
           if (s.checkpoint && (s.checkpoint.resumeAttempts || 0) > 0 && s.checkpoint.notes && s.checkpoint.notes.trim().length > 0) {
@@ -5751,6 +6022,12 @@ client.on('raw', async (event) => {
               fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), frictionLine);
             } catch {}
             appendEvent('vagueness_flag', chId, data.author.id, null, 'update', { pattern: vagueMatch.source });
+            // VAGUENESS-INJECT-001: write lastValidationError so next spawn avoids placeholder phrases
+            const vsVague = readChannelState(chId);
+            const vagueActual = msgContent.match(vagueMatch)?.[0] || vagueMatch.source;
+            vsVague.lastValidationError = `VAGUENESS: Your last UPDATE contained a vague placeholder phrase ("${vagueActual.slice(0, 40)}"). Replace with specific progress: what tool you just ran, what you found, what the next step is. "Working on it" / "Almost done" are B-17 violations — never content-free.`;
+            vsVague.lastValidationErrorAt = Date.now();
+            writeChannelState(chId, vsVague);
           }
           // B-02-NARRATED-COMMITMENT: narrated time-promise phrases — agent commits to a timeline verbally
           // without actually delivering. Logged separately from vagueness_flag so PM can track this pattern.
@@ -5768,6 +6045,12 @@ client.on('raw', async (event) => {
             const b02Line = `[${new Date().toISOString()}] b02_narrated_commitment channel=${chId} pattern="${narratedMatch.source}" msg="${msgContent.slice(0, 80).replace(/\n/g, ' ')}"\n`;
             try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b02Line); } catch {}
             appendEvent('b02_narrated_commitment', chId, data.author.id, null, 'update', { pattern: narratedMatch.source });
+            // NARRATED-COMMIT-INJECT-001: write lastValidationError — narration ≠ execution
+            const vsB02Nc = readChannelState(chId);
+            const narratedActual = msgContent.match(narratedMatch)?.[0] || narratedMatch.source;
+            vsB02Nc.lastValidationError = `B-01: Your UPDATE contained narrated-commitment language ("${narratedActual.slice(0, 40)}") — describing intent as if it were action. ACK/UPDATE may describe intent. DELIVER must prove execution with tool output. Narrating an action as done without tool evidence = B-01 violation.`;
+            vsB02Nc.lastValidationErrorAt = Date.now();
+            writeChannelState(chId, vsB02Nc);
           }
         }
         // B-22-CONFIRM-QUESTION: permission-seeking phrases in UPDATE/DELIVER outside [CONFIRM:] sentinels.
@@ -5824,6 +6107,11 @@ client.on('raw', async (event) => {
             const b20Line = `[${new Date().toISOString()}] B20-TIMELINE channel=${chId} snippet="${b20Content.slice(0, 80).replace(/\n/g, ' ')}"\n`;
             try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b20Line); } catch {}
             appendEvent('b20_timeline_violation', chId, data.author.id, null, phase);
+            // B20-INJECT-001: write lastValidationError so next spawn avoids deadline language
+            const vsB20 = readChannelState(chId);
+            vsB20.lastValidationError = 'B-20: Your message committed to a delivery timeline ("by tomorrow", "within X days", etc.). Never commit to delivery timelines — move as fast as possible; human dependencies are the only valid delay. Remove deadline language and focus on the next concrete step.';
+            vsB20.lastValidationErrorAt = Date.now();
+            writeChannelState(chId, vsB20);
           }
         }
 
@@ -6060,6 +6348,11 @@ client.on('raw', async (event) => {
                   const frictionLine = `[${new Date().toISOString()}] CLAIM-UNVERIFIED channel=${chId} files=${JSON.stringify(missingClaimed)}\n`;
                   try { fs.appendFileSync(path.join(config.HOME, 'helm-workspace', 'system', 'friction-log.md'), frictionLine); } catch {}
                   appendEvent('claim_verify_failed', chId, data.author.id, null, 'deliver', { missingClaimed });
+                  // CLAIM-UNVERIFIED-INJECT-001: write lastValidationError so next spawn verifies file exists
+                  const vsCu = readChannelState(chId);
+                  vsCu.lastValidationError = `B-01: Your DELIVER referenced file paths that don't exist on disk (${missingClaimed.join(', ')}). Either the write failed silently or you used the wrong path. Verify the file exists and read it back before posting DELIVER.`;
+                  vsCu.lastValidationErrorAt = Date.now();
+                  writeChannelState(chId, vsCu);
                 }
 
                 // CLAIM-VERIFY READ-BACK GATE — if files were claimed, check for "Verified: path →" citation.
@@ -6101,7 +6394,11 @@ client.on('raw', async (event) => {
                     const frictionLine2 = `[${new Date().toISOString()}] QUEUE-CLAIM-UNVERIFIED channel=${chId}\n`;
                     try { fs.appendFileSync(path.join(config.HOME, 'helm-workspace', 'system', 'friction-log.md'), frictionLine2); } catch {}
                     appendEvent('claim_verify_failed', chId, data.author.id, null, 'deliver', { missingClaimed: ['engineer-queue.md (queue claim unverified)'] });
-                    // B-01 Tier 1 = silent to user — friction-log only, no visible reaction
+                    // QUEUE-CLAIM-INJECT-001: write lastValidationError so next spawn uses queue-write.sh
+                    const vsQcu = readChannelState(chId);
+                    vsQcu.lastValidationError = 'B-01: Your DELIVER claimed to queue an item but engineer-queue.md was not recently modified or had no queued_at: block. Always call ~/marvin-bot/queue-write.sh BEFORE claiming an item is queued. "I queued X" without the script = B-01 violation.';
+                    vsQcu.lastValidationErrorAt = Date.now();
+                    writeChannelState(chId, vsQcu);
                   }
                 }
 
@@ -6120,6 +6417,11 @@ client.on('raw', async (event) => {
                       const frictionLine3 = `[${new Date().toISOString()}] LEDGER-CLAIM-GATE channel=${chId} ledgerAge=${Math.round(ledgerAgeMs/60000)}min\n`;
                       try { fs.appendFileSync(path.join(config.HOME, 'helm-workspace', 'system', 'friction-log.md'), frictionLine3); } catch {}
                       appendEvent('ledger_claim_gate_violation', chId, data.author.id, null, 'deliver', { ledgerAgeMin: Math.round(ledgerAgeMs/60000) });
+                      // LEDGER-CLAIM-INJECT-001: write lastValidationError so next spawn writes ledger first
+                      const vsLcg = readChannelState(chId);
+                      vsLcg.lastValidationError = `B-01: Your DELIVER claimed completion/queued/shipped but task-ledger.jsonl wasn't written in the last 15 min (age: ${Math.round(ledgerAgeMs/60000)} min). Call queue-mark-done.sh or write to task-registry.jsonl BEFORE posting DELIVER with completion claims.`;
+                      vsLcg.lastValidationErrorAt = Date.now();
+                      writeChannelState(chId, vsLcg);
                     }
                   } catch { /* non-blocking if ledger missing */ }
                 }
@@ -6359,6 +6661,44 @@ client.on('raw', async (event) => {
                     const b16Line = `[${new Date().toISOString()}] B16-NO-CONTEXT-CHECK channel=${chId} totalSteps=${b16chk.totalSteps}\n`;
                     try { fs.appendFileSync(path.join(config.WORKDIR, 'system', 'friction-log.md'), b16Line); } catch {}
                     appendEvent('b16_no_context_check', chId, data.author.id, null, 'deliver', { totalSteps: b16chk.totalSteps });
+                  }
+                }
+              }
+
+              // HAIKU-FINDING-202606161300 (B13-B14-DELIVER-GATE): Supplement to MANDATE-B13B14-DETECT-001.
+              // At DELIVER time, verify checkpoint notes contain CAPABILITIES: and SKILLS: for implementation tasks.
+              // Catches agents that skip UPDATE and go straight to DELIVER (existing gate only fired on first UPDATE).
+              {
+                const b1314dState = readChannelState(chId);
+                const b1314dChk = b1314dState?.checkpoint;
+                if (b1314dChk && b1314dChk.notes && b1314dChk.requestText) {
+                  const b1314dFirstChunk = (b1314dChk.requestText || '').slice(0, 70);
+                  const b1314dStartsWithDate = /^\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\w+ \d{1,2}|\d{1,2} )/i.test(b1314dFirstChunk);
+                  const b1314dHasImplSignal = !b1314dStartsWithDate && /\b(?:build|implement|create|fix|write|add)\b/i.test(b1314dFirstChunk);
+                  if (b1314dHasImplSignal) {
+                    const b1314dNotes = b1314dChk.notes;
+                    const b13dMissing = !/CAPABILITIES:/i.test(b1314dNotes);
+                    const b14dMissing = !/SKILLS:/i.test(b1314dNotes);
+                    if (b13dMissing || b14dMissing) {
+                      const missing1314 = [];
+                      if (b13dMissing) {
+                        missing1314.push('CAPABILITIES: checked PROVEN for [approach] — [found pattern X / not found]. FAILED check: [clear / blocked by Y]');
+                        const b13dLine = `[${new Date().toISOString()}] B13-NO-CAPABILITIES-CHECK-DELIVER channel=${chId} requestSnippet="${(b1314dChk.requestText||'').slice(0,60).replace(/\n/g,' ')}"\n`;
+                        try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b13dLine); } catch {}
+                      }
+                      if (b14dMissing) {
+                        missing1314.push('SKILLS: [relevant skill name used / no matching skill — improvising]');
+                        const b14dLine = `[${new Date().toISOString()}] B14-NO-SKILLS-CHECK-DELIVER channel=${chId} requestSnippet="${(b1314dChk.requestText||'').slice(0,60).replace(/\n/g,' ')}"\n`;
+                        try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b14dLine); } catch {}
+                      }
+                      appendEvent('b13_b14_deliver_gate_violation', chId, data.author.id, null, 'deliver', { b13Missing: b13dMissing, b14Missing: b14dMissing });
+                      try {
+                        const vs1314d = readChannelState(chId);
+                        vs1314d.lastValidationError = `B-13/B-14 (DELIVER gate): Your checkpoint notes lacked required verification gates. Add to initial checkpoint notes: ${missing1314.join(' | ')}`;
+                        vs1314d.lastValidationErrorAt = Date.now();
+                        writeChannelState(chId, vs1314d);
+                      } catch {}
+                    }
                   }
                 }
               }
@@ -6738,7 +7078,9 @@ client.on('raw', async (event) => {
       } catch {}
 
       const lines = [];
-      lines.push(`**Marvin status** — ${new Date().toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit' })} PT`);
+      const _statusTz = getUserTimezone();
+      const _statusTzAbbr = (new Intl.DateTimeFormat('en-US', { timeZone: _statusTz, timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName') || {}).value || '';
+      lines.push(`**Marvin status** — ${new Date().toLocaleTimeString('en-US', { timeZone: _statusTz, hour: '2-digit', minute: '2-digit' })} ${_statusTzAbbr}`);
       lines.push(`Bot: 🟢 alive | Heartbeat: ${heartbeatAge}`);
       lines.push(`Running: ${activeChannels.length} | Stuck: ${stuckChannels.length}`);
       if (lastError !== 'none') lines.push(`Last error: ${lastError}`);
@@ -7013,6 +7355,18 @@ client.on('raw', async (event) => {
     return;
   }
 
+  // ── ONBOARD-CONNECTOR-CLAUDE-NATIVE-001: "connect" keyword starts the connector walkthrough ──
+  // Lets the post-onboarding fallback ("type connect…") actually work, and lets a user who
+  // skipped connectors during setup wire one up later.
+  if (normalizedContent === 'connect') {
+    try {
+      const ch = await client.channels.fetch(channelId);
+      await sendConnectorStep(ch);
+    } catch (e) { console.error('[connect-cmd] error:', e.message); }
+    if (pendingMessageLock.has(channelId)) pendingMessageLock.delete(channelId);
+    return;
+  }
+
   // ── /model-check — show current model routing status ─────────────────────
   if (normalizedContent === '/model-check') {
     try {
@@ -7128,6 +7482,21 @@ client.on('raw', async (event) => {
       // First user message — start Stage-1
       setOnboardingStep('stage1_q1');
       await sendOnboardingQuestion(channel, 'stage1_q1');
+      try { if (message) await message.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
+      pendingMessageLock.delete(channelId);
+      return;
+    }
+    // ONBOARD-TIMEZONE-001: user is typing a custom timezone (chose "Other").
+    if (currentStep === 'stage2_s2tz_input' && awaitingTimezoneInput.has(channelId)) {
+      const tz = resolveTimezoneInput((content || '').trim());
+      if (tz) {
+        awaitingTimezoneInput.delete(channelId);
+        setConfigValue('TIMEZONE', tz);
+        await channel.send(`Got it — timezone set to **${tz}**.`).catch(() => {});
+        await sendConnectorStep(channel);
+      } else {
+        await channel.send("I didn't recognize that timezone. Try an IANA name like `Europe/London`, `America/New_York`, or `Asia/Tokyo`.").catch(() => {});
+      }
       try { if (message) await message.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
       pendingMessageLock.delete(channelId);
       return;
@@ -7277,6 +7646,22 @@ client.on('raw', async (event) => {
         } catch (err) {
           console.error('[parallel] agent error:', err.message);
           appendEvent('agent_error_recoverable', threadId, null, null, null, { agentKey, error: err.message?.slice(0, 120) });
+          // Suppress immediately on SPAWN_DEDUP — another spawn is already pending/running (ERROR-FALSE-POSITIVE)
+          if (err.message && err.message.includes('SPAWN_DEDUP')) {
+            console.log(`[error-suppress] Thread ${threadId} — SPAWN_DEDUP (another spawn pending), suppressing error`);
+            appendEvent('agent_error_suppressed', threadId, null, null, null, { reason: 'spawn_dedup' });
+            return; // no ❌, no "Something went wrong"
+          }
+          // Suppress immediately on SIGTERM-with-checkpoint — silence watchdog killed agent that has checkpoint,
+          // auto-resume is scheduled by post-exit-watchdog (ERROR-FALSE-POSITIVE)
+          const isSigterm = err.message && (err.message.includes('exit 143') || err.message.includes('signal SIGTERM') || err.message.includes('killed with signal'));
+          const threadStateForSig = readChannelState(threadId);
+          const hasCheckpoint = !!(threadStateForSig.checkpoint && threadStateForSig.checkpoint.notes);
+          if (isSigterm && hasCheckpoint) {
+            console.log(`[error-suppress] Thread ${threadId} — SIGTERM with checkpoint, auto-resume pending, suppressing error`);
+            appendEvent('agent_error_suppressed', threadId, null, null, null, { reason: 'sigterm_with_checkpoint' });
+            return; // no ❌ — post-exit-watchdog will auto-resume
+          }
           // RECOVER-DEFERRED-001: delay generic error to give recovery spawn time to handle it.
           // Suppress if: (a) agent already delivered (phase='deliver') — happens when agent posts via
           // discord-post.sh then Claude CLI exits non-zero due to API/cleanup error; (b) a new spawn
@@ -7298,8 +7683,16 @@ client.on('raw', async (event) => {
                 appendEvent('agent_error_suppressed', threadId, null, null, null, { reason: alreadyDelivered ? 'delivered' : newSpawnStarted ? 'new_spawn' : hasStagedDeliver ? 'staged' : 'recovery_running' });
                 return;
               }
+              // Log error_shown to event-stream AND audit log (ERROR-FALSE-POSITIVE — was invisible before)
+              appendEvent('error_shown', threadId, null, null, null, { agentKey, exitReason: err.message?.slice(0, 200) });
+              try { fs.appendFileSync(path.join(config.WORKDIR, 'system', 'helm-audit.log'), `[${new Date().toISOString()}] error_shown channel=${threadId} agent=${agentKey} reason=${err.message?.slice(0, 200)}\n`); } catch {}
               appendEvent('agent_error_fired', threadId, null, null, null, { agentKey });
-              if (swgThreadCh) await swgThreadCh.send('⚠️ Something went wrong. Try again in a moment.');
+              // ZOMBIE-PROC-ERROR-THREAD-001: post error then auto-delete after 30s so it can't become a thread anchor
+              if (swgThreadCh) {
+                swgThreadCh.send('⚠️ Something went wrong. Try again in a moment.').then(swgErrMsg => {
+                  if (swgErrMsg && swgErrMsg.deletable) setTimeout(() => swgErrMsg.delete().catch(() => {}), 30000);
+                }).catch(() => {});
+              }
               if (swgThreadMsg) {
                 try { await swgThreadMsg.reactions.resolve('⏳')?.users.remove(client.user.id); } catch {}
                 await swgThreadMsg.react('❌');
@@ -7549,18 +7942,31 @@ client.on('raw', async (event) => {
           } catch (writeErr) {
             console.error('[helm-init] channels.json write failed:', writeErr.message);
           }
-          await channel.send(`✅ HELM is set up. All channels created and configured — no manual steps needed.\n\nChannels created:\n${created.join('\n')}`).catch(() => {});
-          // TOUR-FIRST-USER-001: post tour to #general after init (installer never gets GUILD_MEMBER_ADD)
+          // P5.1 sub-item 10: verify 6 tour channels exist after init
+          const TOUR_CHANNEL_NAMES = ['general','new-workspace','capture','daily-briefing','help','preferences'];
+          const missingTourChs = TOUR_CHANNEL_NAMES.filter(n => !guild.channels.cache.find(c => c.type === 0 && c.name === n));
+          const tourVerifyLine = missingTourChs.length === 0
+            ? '✅ All 6 tour channels confirmed.'
+            : `⚠️ Missing tour channels: ${missingTourChs.map(n => '#'+n).join(', ')}`;
+          await channel.send(`✅ HELM is set up. All channels created and configured — no manual steps needed.\n\nChannels created:\n${created.join('\n')}\n\n${tourVerifyLine}`).catch(() => {});
+          // ONBOARD-TOUR-ORDER-001: tour fires ONCE after Stage-2, never before prefs.
+          // The installer never gets GUILD_MEMBER_ADD, so we post a welcome that invites
+          // setup; the tour is launched after Stage-2 completion (handleOnboardingButton).
           try {
-            const tourFlag = path.join(config.WORKDIR, 'system', '.first-boot-tour.flag');
-            if (!fs.existsSync(tourFlag)) {
-              const generalCh = guild.channels.cache.find(c => c.type === 0 && c.name === 'general')
-                || await client.channels.fetch(chMap['GENERAL_CHANNEL'] || '').catch(() => null);
-              if (generalCh) {
-                await generalCh.send('👋 HELM is ready! Here\'s a quick tour to get you started:').catch(() => {});
-                await sendTourStep(generalCh, 0).catch(() => {});
-                fs.writeFileSync(tourFlag, new Date().toISOString());
-                console.log('[helm-init] posted tour to #general');
+            const generalCh = guild.channels.cache.find(c => c.type === 0 && c.name === 'general')
+              || await client.channels.fetch(chMap['GENERAL_CHANNEL'] || '').catch(() => null);
+            if (generalCh) {
+              if (isOnboardingComplete()) {
+                const tourFlag = path.join(config.WORKDIR, 'system', '.first-boot-tour.flag');
+                if (!fs.existsSync(tourFlag)) {
+                  await generalCh.send('👋 HELM is ready! Here\'s a quick tour to get you started:').catch(() => {});
+                  await sendTourStep(generalCh, 0).catch(() => {});
+                  fs.writeFileSync(tourFlag, new Date().toISOString());
+                  console.log('[helm-init] posted tour to #general');
+                }
+              } else {
+                await generalCh.send('👋 HELM is ready! Say hi in #general and I\'ll set up your preferences — takes about a minute. The quick tour comes right after.').catch(() => {});
+                console.log('[helm-init] posted setup invite to #general');
               }
             }
           } catch (tourErr) { console.error('[helm-init] tour error:', tourErr.message); }
@@ -8308,6 +8714,21 @@ client.on('raw', async (event) => {
           }
         } else {
           appendEvent('agent_error_recoverable', channelId, null, null, null, { agentKey, error: err.message?.slice(0, 120) });
+          // Suppress immediately on SPAWN_DEDUP — another spawn is already pending/running (ERROR-FALSE-POSITIVE)
+          if (err.message && err.message.includes('SPAWN_DEDUP')) {
+            console.log(`[error-suppress] Channel ${channelId} — SPAWN_DEDUP (another spawn pending), suppressing error`);
+            appendEvent('agent_error_suppressed', channelId, null, null, null, { reason: 'spawn_dedup' });
+            return; // no ❌, no "Something went wrong"
+          }
+          // Suppress immediately on SIGTERM-with-checkpoint — silence watchdog killed agent, auto-resume pending (ERROR-FALSE-POSITIVE)
+          const isSigtermCh = err.message && (err.message.includes('exit 143') || err.message.includes('signal SIGTERM') || err.message.includes('killed with signal'));
+          const chStateForSig = readChannelState(channelId);
+          const hasCheckpointCh = !!(chStateForSig.checkpoint && chStateForSig.checkpoint.notes);
+          if (isSigtermCh && hasCheckpointCh) {
+            console.log(`[error-suppress] Channel ${channelId} — SIGTERM with checkpoint, auto-resume pending, suppressing error`);
+            appendEvent('agent_error_suppressed', channelId, null, null, null, { reason: 'sigterm_with_checkpoint' });
+            return; // no ❌ — post-exit-watchdog will auto-resume
+          }
           // RECOVER-DEFERRED-001: delay generic error to give recovery spawn time to handle it.
           // Suppress if: (a) agent already delivered (phase='deliver') — happens when agent posts via
           // discord-post.sh then Claude CLI exits non-zero due to API/cleanup error; (b) a new spawn
@@ -8328,6 +8749,9 @@ client.on('raw', async (event) => {
                 appendEvent('agent_error_suppressed', channelId, null, null, null, { reason: alreadyDelivered ? 'delivered' : newSpawnStarted ? 'new_spawn' : hasStagedDeliver ? 'staged' : 'recovery_running' });
                 return;
               }
+              // Log error_shown to event-stream AND audit log (ERROR-FALSE-POSITIVE — was invisible before)
+              appendEvent('error_shown', channelId, null, null, null, { agentKey, exitReason: err.message?.slice(0, 200) });
+              try { fs.appendFileSync(path.join(config.WORKDIR, 'system', 'helm-audit.log'), `[${new Date().toISOString()}] error_shown channel=${channelId} agent=${agentKey} reason=${err.message?.slice(0, 200)}\n`); } catch {}
               appendEvent('agent_error_fired', channelId, null, null, null, { agentKey });
               if (channel) await channel.send('⚠️ Something went wrong. Try again in a moment.');
               if (swgMsg) {
@@ -8388,6 +8812,11 @@ client.on('raw', async (event) => {
           const b04Line = `[${new Date().toISOString()}] B04-ORPHAN-EXIT channel=${b04ChId} phase=update no-deliver\n`;
           try { fs.appendFileSync(path.join(process.env.HOME, 'helm-workspace', 'system', 'friction-log.md'), b04Line); } catch {}
           appendEvent('b04_orphan_update_exit', b04ChId, null, null, null, {});
+          // B04-ORPHAN-INJECT-001: write lastValidationError so next spawn knows to end with DELIVER/BLOCK
+          const b04Vs = readChannelState(b04ChId);
+          b04Vs.lastValidationError = 'B-04: Your previous turn ended with ⏳ UPDATE but no ✅ DELIVER or ⏸ BLOCK. Every turn MUST end with DELIVER or BLOCK — never exit silently after an UPDATE. If work is done, post DELIVER immediately. If blocked, post BLOCK with two alternative approaches tried.';
+          b04Vs.lastValidationErrorAt = Date.now();
+          writeChannelState(b04ChId, b04Vs);
         }, 8 * 60 * 1000); // 8 min — matches POST_EXIT_RESUME_MS watchdog
       }
     }

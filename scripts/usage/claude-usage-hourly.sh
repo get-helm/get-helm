@@ -101,6 +101,16 @@ fi
 # Successful fetch — clear error state
 rm -f "$ERROR_STATE_FILE"
 
+# ONBOARD-USAGE-THRESHOLD-001: read user-configured alert threshold from CONFIG.md (default: 80).
+# Onboarding saves USAGE_WARNING_THRESHOLD=70|85|95; this script now honours it.
+CONFIG_MD="$HOME/helm-workspace/CONFIG.md"
+WARN_THRESHOLD=80
+if [ -f "$CONFIG_MD" ]; then
+  _t=$(grep '^USAGE_WARNING_THRESHOLD:' "$CONFIG_MD" 2>/dev/null | sed 's/[^0-9]//g')
+  if [ -n "$_t" ] && [ "$_t" -ge 50 ] && [ "$_t" -le 100 ] 2>/dev/null; then WARN_THRESHOLD="$_t"; fi
+fi
+WARN_YELLOW=$(( WARN_THRESHOLD - 20 ))
+
 # Parse values
 five=$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('fiveHourPct'); print(round(v) if v is not None else 'n/a')" 2>/dev/null)
 seven=$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('sevenDayPct'); print(round(v) if v is not None else 'n/a')" 2>/dev/null)
@@ -111,14 +121,14 @@ five_icon="✅"
 sonnet_icon="✅"
 seven_icon="✅"
 
-if [ "$five" != "n/a" ] && [ "$five" -ge 80 ] 2>/dev/null; then five_icon="🔴"; fi
-if [ "$five" != "n/a" ] && [ "$five" -ge 60 ] && [ "$five" -lt 80 ] 2>/dev/null; then five_icon="🟡"; fi
+if [ "$five" != "n/a" ] && [ "$five" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then five_icon="🔴"; fi
+if [ "$five" != "n/a" ] && [ "$five" -ge "$WARN_YELLOW" ] && [ "$five" -lt "$WARN_THRESHOLD" ] 2>/dev/null; then five_icon="🟡"; fi
 
-if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge 80 ] 2>/dev/null; then sonnet_icon="🔴"; fi
-if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge 60 ] && [ "$sonnet" -lt 80 ] 2>/dev/null; then sonnet_icon="🟡"; fi
+if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then sonnet_icon="🔴"; fi
+if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge "$WARN_YELLOW" ] && [ "$sonnet" -lt "$WARN_THRESHOLD" ] 2>/dev/null; then sonnet_icon="🟡"; fi
 
-if [ "$seven" != "n/a" ] && [ "$seven" -ge 80 ] 2>/dev/null; then seven_icon="🔴"; fi
-if [ "$seven" != "n/a" ] && [ "$seven" -ge 60 ] && [ "$seven" -lt 80 ] 2>/dev/null; then seven_icon="🟡"; fi
+if [ "$seven" != "n/a" ] && [ "$seven" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then seven_icon="🔴"; fi
+if [ "$seven" != "n/a" ] && [ "$seven" -ge "$WARN_YELLOW" ] && [ "$seven" -lt "$WARN_THRESHOLD" ] 2>/dev/null; then seven_icon="🟡"; fi
 
 NOW=$(date -u +"%H:%MZ")
 MSG="${five_icon} Session (5hr): **${five}%**  ${sonnet_icon} Sonnet 7-day: **${sonnet}%**  ${seven_icon} Overall 7-day: **${seven}%**  _(${NOW})_"
@@ -138,14 +148,14 @@ else
   echo "DEBUG: bands unchanged ($bands), skipping post" >> "$SCRIPT_DIR/debug-hourly.log"
 fi
 
-# Fire a louder alert to #pap-improvements if Sonnet hits 80%
-if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge 80 ] 2>/dev/null; then
+# Fire a louder alert to #pap-improvements if Sonnet hits threshold
+if [ "$sonnet" != "n/a" ] && [ "$sonnet" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then
   "$DISCORD" "{{USER_CHANNEL_HELM_IMPROVEMENTS}}" "🔴 Sonnet 7-day usage at **${sonnet}%** — PAP may hit rate limits soon"
 fi
 
-# COMMS-GAP-001: Alert #pap-improvements when 5hr session hits 80% (dedup: once per 3hr)
+# COMMS-GAP-001: Alert #pap-improvements when 5hr session hits threshold (dedup: once per 3hr)
 FIVE_ALERT_STATE="$SCRIPT_DIR/.last-five-alert-posted"
-if [ "$five" != "n/a" ] && [ "$five" -ge 80 ] 2>/dev/null; then
+if [ "$five" != "n/a" ] && [ "$five" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then
   last_five=$(cat "$FIVE_ALERT_STATE" 2>/dev/null || echo "0")
   now=$(date +%s)
   if [ $((now - last_five)) -gt 10800 ]; then
@@ -154,9 +164,9 @@ if [ "$five" != "n/a" ] && [ "$five" -ge 80 ] 2>/dev/null; then
   fi
 fi
 
-# COMMS-GAP-001: Alert #pap-improvements when overall 7-day hits 80% (dedup: once per 3hr)
+# COMMS-GAP-001: Alert #pap-improvements when overall 7-day hits threshold (dedup: once per 3hr)
 SEVEN_ALERT_STATE="$SCRIPT_DIR/.last-seven-alert-posted"
-if [ "$seven" != "n/a" ] && [ "$seven" -ge 80 ] 2>/dev/null; then
+if [ "$seven" != "n/a" ] && [ "$seven" -ge "$WARN_THRESHOLD" ] 2>/dev/null; then
   last_seven=$(cat "$SEVEN_ALERT_STATE" 2>/dev/null || echo "0")
   now=$(date +%s)
   if [ $((now - last_seven)) -gt 10800 ]; then

@@ -22,3 +22,11 @@ else
     # Explicit /fail caused immediate DOWN+UP emails on brief restarts
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SKIP: bot.js not running — withholding ping (HC.io detects silence)" >> "$LOG"
 fi
+
+# Ground-truth stuck-channel self-heal (piggybacked here for reliable 5-min cadence;
+# crontab edits are blocked in this env). Only runs when bot is up to do the respawn.
+# Backgrounded so it never delays the heartbeat ping; healer self-bounds its curls.
+if pgrep -f "bot\.js" > /dev/null 2>&1; then
+    ( /Users/{{USER_HOME}}/marvin-bot/helm-channel-healer.sh \
+        >> /Users/{{USER_HOME}}/marvin-bot/helm-channel-healer.log 2>&1 ) &
+fi

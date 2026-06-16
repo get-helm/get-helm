@@ -1,14 +1,14 @@
-# HELM Cowork Install Prompt
-# Phase 2: Claude Desktop Cowork Mode — HELM Installation
+# HELM Install Prompt
+# Phase 2: Claude Desktop — Code tab, Local environment
 # 
 # This is the verbatim prompt users paste into Claude Desktop after completing Phase 1 (pre-install guide).
 # Display this with a copy button on the GitHub landing page and as Phase 1 hand-off text.
 #
-# Prerequisites: Claude Desktop open, Cowork mode enabled, clean/dedicated machine
+# Prerequisites: Claude Desktop open, Code tab selected, environment set to Local (not Cowork/sandbox)
 
 ---
 
-## THE COWORK INSTALL PROMPT (copy-paste verbatim into Claude Desktop)
+## THE INSTALL PROMPT (copy-paste verbatim into Claude Desktop Code tab → Local)
 
 ```
 You are helping someone complete the final step of installing HELM on their machine.
@@ -142,7 +142,7 @@ Tell me when you see a page with 'Bot' as the heading."
 
 [After confirmation:]
 
-"Look toward the bottom of this page for a section called 'Privileged Gateway Intents.' You'll see three toggle switches.
+"Almost there. Scroll to the bottom of this Bot page and find a section called 'Privileged Gateway Intents.' (It sounds technical — these are just the switches that let [AGENT_NAME] read and respond to your messages.)
 
 Turn ALL THREE on — they should turn blue or green:
 → Presence Intent
@@ -157,7 +157,9 @@ Tell me when all three are enabled."
 
 Click 'Reset Token.' If a warning appears asking you to confirm — click 'Yes, do it!'
 
-A long string of letters and numbers will appear. This is [AGENT_NAME]'s password for Discord. Copy it and paste it here."
+A long string of letters and numbers will appear. This is [AGENT_NAME]'s password for Discord.
+
+Before you paste it here — it stays on your own machine, in a file only your account can open. It never leaves this computer. Go ahead and paste it:"
 
 [After they paste the token:]
 
@@ -166,7 +168,7 @@ SAVE token to local config (chmod 600 — no 1Password required for new users):
 echo "DISCORD_BOT_TOKEN=[TOKEN]" >> ~/helm-workspace/setup-config.txt && chmod 600 ~/helm-workspace/setup-config.txt
 ```
 
-Say: "Got it — saved to your local config file. It's stored on your Mac and only your user account can read it. You won't need to look at it again.
+Say: "Got it — saved. You won't need to look at it again.
 
 Now: in the left sidebar, click 'OAuth2', then in the submenu that appears, click 'URL Generator.'
 
@@ -176,7 +178,7 @@ Tell me when you see a page with a grid of checkboxes."
 
 "In the 'Scopes' section, find 'bot' in the list and check the checkbox next to it.
 
-After you check 'bot,' a second section appears below called 'Bot Permissions.' Find 'Administrator' at the top of that section and check it.
+After you check 'bot,' a second section appears below called 'Bot Permissions.' Find 'Administrator' at the top and check it. (This lets [AGENT_NAME] manage your private server — create channels, post your briefings. It only has this power inside your own HELM server, nowhere else.)
 
 Tell me when both are checked."
 
@@ -220,11 +222,11 @@ Tell me when you see a page that says 'Authorized' or shows a green checkmark."
 
 Last piece: I need your Discord server ID. Here's how to find it:
 
-In Discord, right-click on your server name in the left sidebar. If you see 'Copy Server ID' — click it and paste it here.
+In Discord, right-click on your server name in the left sidebar. If you see 'Copy Server ID' — click it and paste it here. (It'll be a string of 17–18 digits, like 1234567890123456789.)
 
-If you don't see that option: open Discord settings (gear icon next to your username at the bottom left) → click 'Advanced' → turn on 'Developer Mode.' Then right-click your server name again."
+If you don't see 'Copy Server ID': open Discord settings (gear icon next to your username at the bottom left) → click 'Advanced' → turn on 'Developer Mode.' Then right-click your server name again."
 
-[After they paste the server ID:]
+[After they paste the server ID — validate it's 17-20 digits. If not, say: "Hmm, that doesn't look right — a server ID should be 17–18 digits. Make sure you right-clicked the server name (not a channel). Try again."]
 
 SAVE:
 ```bash
@@ -235,7 +237,7 @@ One more thing — I need your Discord user ID so [AGENT_NAME] knows you're the 
 
 "Last step for Discord setup: I need your personal Discord ID so I know who's in charge.
 
-Right-click on your own username anywhere in Discord (your name in the member list, or at the bottom left next to the gear icon). If you see 'Copy User ID' — click it and paste it here.
+Right-click on your own username anywhere in Discord (your name in the member list, or at the bottom left next to the gear icon). If you see 'Copy User ID' — click it and paste it here. (Same format — 17–18 digits.)
 
 If you don't see that option, make sure Developer Mode is on (Settings → Advanced → Developer Mode), then try right-clicking your name again."
 
@@ -257,7 +259,7 @@ HELM keeps a nightly backup of your setup on GitHub — a free service that stor
 Do you have a GitHub account?"
 
 [BUTTON: Yes, set up backup]
-[BUTTON: Skip for now]
+[BUTTON: Skip for now — if this machine dies I'll set up again from scratch]
 
 If YES:
 "Go to: github.com/settings/tokens
@@ -265,7 +267,7 @@ If YES:
 Click 'Generate new token' → 'Generate new token (classic).'
 
 In the Note field, type: HELM backup
-For Expiration, choose: No expiration
+For Expiration, choose: 1 year
 Under Select scopes, check the 'repo' checkbox at the top.
 
 Scroll down and click 'Generate token.' Copy the long string that appears (starts with 'ghp_') and paste it here."
