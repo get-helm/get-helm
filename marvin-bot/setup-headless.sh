@@ -64,7 +64,6 @@ if [[ -f "$TEMPLATE" ]]; then
     -e "s/{{TIMEZONE}}/$TIMEZONE/g" \
     -e "s/{{DISCORD_SERVER_ID}}/$DISCORD_SERVER_ID/g" \
     -e "s/{{GITHUB_USERNAME}}/$GITHUB_USERNAME/g" \
-    -e "s/ONBOARDING_COMPLETED: false/ONBOARDING_COMPLETED: true/g" \
     "$TEMPLATE" > "$CONFIG_OUT"
 else
   cat > "$CONFIG_OUT" << EOF
@@ -73,7 +72,8 @@ else
 AGENT_NAME: $AGENT_NAME
 USER_PREFERRED_NAME: $USER_NAME
 TIMEZONE: $TIMEZONE
-ONBOARDING_COMPLETED: true
+ONBOARDING_COMPLETED: false
+ONBOARDING_STEP: stage1_q1
 DATE_FORMAT: MM/DD/YYYY
 TIME_FORMAT: 12-hour
 WEEK_STARTS_ON: Sunday
@@ -101,10 +101,49 @@ write_env() {
   fi
 }
 
-write_env "DISCORD_BOT_TOKEN" "$DISCORD_TOKEN"
+# 1Password vault storage — used when USE_VAULT=yes (set by cowork install prompt)
+USE_VAULT=$(get_val "USE_VAULT" "no")
+HELM_VAULT="HELM"
+VAULT_OK=false
+
+if [[ "$USE_VAULT" == "yes" ]] && command -v op &>/dev/null; then
+  if op account list 2>/dev/null | grep -q .; then
+    op vault create "$HELM_VAULT" 2>/dev/null || true
+    VAULT_OK=true
+    log "1Password vault ready — storing secrets to vault '$HELM_VAULT'"
+  else
+    log "USE_VAULT=yes but op not signed in — falling back to .env"
+  fi
+fi
+
+# Store a secret: vault (if available) AND .env as runtime copy for bot.js
+store_secret() {
+  local title="$1" env_key="$2" value="$3"
+  [[ -z "$value" ]] && return 0
+  if $VAULT_OK; then
+    if op item get "$title" --vault "$HELM_VAULT" &>/dev/null 2>&1; then
+      op item edit "$title" --vault "$HELM_VAULT" "password=$value" &>/dev/null 2>&1 || true
+    else
+      op item create --category Login --title "$title" --vault "$HELM_VAULT" \
+        "username=helm" "password=$value" &>/dev/null 2>&1 || true
+    fi
+    log "Stored '$title' in vault '$HELM_VAULT'"
+  fi
+  # Always write to .env so bot.js can read at runtime
+  write_env "$env_key" "$value"
+}
+
+store_secret "HELM Bot Token" "DISCORD_BOT_TOKEN" "$DISCORD_TOKEN"
+store_secret "HELM GitHub PAT" "GITHUB_PAT" "$GITHUB_TOKEN"
+# Non-secret identifiers go directly to .env
 write_env "DISCORD_OWNER_ID" "$DISCORD_OWNER_ID"
 write_env "DISCORD_GUILD_ID" "$DISCORD_SERVER_ID"
-write_env "GITHUB_PAT" "$GITHUB_TOKEN"
+write_env "AGENT_NAME" "$AGENT_NAME"
+
+# Workspace path the bot watches for the new-workspace handoff. The intake
+# agent writes ~/pap-workspace/handoff.json; without this link a fresh install
+# has no such directory and scaffolding fails silently.
+ln -sfn "$WORKSPACE" "$HOME/pap-workspace" 2>/dev/null || true
 
 # Write QMD install in background (2GB model download — non-blocking)
 QMD_INSTALL="$HELM_DIR/marvin-bot/qmd-install.sh"

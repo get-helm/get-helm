@@ -162,7 +162,7 @@ The publish pipeline uses a **denylist model**: everything ships unless explicit
 | 2.2 | Answers 2-3 config questions (bot name, their name) | Claude collects config; writes to a temp config file |
 | 2.3 | Watches progress (no typing) | Claude runs `curl install.sh | bash` silently — installs Homebrew (if needed), Node.js, git, clones repo, runs npm install |
 | 2.4 | Follows Discord bot creation: click-by-click | Claude opens Discord Developer Portal URL, guides through: Create Application → Add Bot → Copy Token → Enable 3 intents → Create Invite URL → Add bot to server |
-| 2.5 | Pastes bot token when asked | Claude writes token to `~/helm/.env` (not 1Password — see Gap G-C) |
+| 2.5 | Pastes bot token when asked | Claude writes token to vault (1Password, if set up in Step A2.5) + `~/helm/.env` as runtime copy |
 | 2.6 | Confirms server ID | Claude writes to `channels.json` via helm-hydrate.sh |
 | 2.7 | Watches the connection test | Claude runs `node startup.js --test` or equivalent; verifies bot comes online |
 | 2.8 | Confirms first Discord message | The bot posts "HELM is online" to #general |
@@ -345,7 +345,7 @@ These are P5.1 decisions locked in this doc but NOT yet implemented in bot.js (v
 - [ ] **ONBOARD-STAGE12-FLOW-001** — Stage-1 (3-tap) + Stage-2 pref flow (D5/C22/C25). NOT in bot.js — prefs only handled ad-hoc by help agent today.
 - [ ] **ONBOARD-RESUME-001** — Onboarding resume via ONBOARDING_STEP (D9). No ONBOARDING_STEP in bot.js.
 - [ ] **ONBOARD-CONNECTOR-BRIEFING-001** — Connector provider-ask (no Gmail assumption) + in-flow first briefing (C24/G-E). Not built.
-- [ ] **ONBOARD-ENV-WORDING-001** — Replace "Vault" credential promise with honest `~/helm/.env` wording (G-C).
+- [x] **ONBOARD-ENV-WORDING-001** — 1Password setup added to onboarding (Step A2.5); honest local-storage wording when user skips vault. Gap G-C resolved. (2026-06-16)
 - [ ] **(also queued separately)** Windows auto-start (G-F) + Phase-2 CLI-runner note (G-H) — see BLOCK-5/BLOCK-6.
 
 ---
@@ -369,13 +369,14 @@ These are verified issues found on 2026-06-15. **{{USER_JERRY}}'s decisions are 
 **Action:** Every "Cowork" reference in Phase-1 prompt, Phase-2 prompt, landing page, and README must be replaced with "Code tab → Local" (or "Claude Code CLI" as fallback).  
 **Status:** Fix required. Blocking.
 
-### G-C: .env storage vs. "Vault" promise
-**Risk:** User is told their credentials are stored in a secure vault; they're actually in a plaintext `.env` file.  
-**Detail:** The P5.1 spec narration says "[SAVE token to HELM Vault — never stored in plain text]" and "Bot token → HELM Vault only." The actual install writes the token to `~/helm/.env` in plaintext. New users have no 1Password/PAP Vault — that's {{USER_JERRY}}-specific infra.  
-**Options:**
-1. Fix the wording: "Token stored locally in `~/helm/.env`, protected by your Mac's file permissions." (honest, not scary)
-2. Add an optional encrypted local store (adds complexity, not blocking for beta)  
-**Status:** Fix wording (Option 1) before beta. Option 2 is post-beta.
+### G-C: .env storage vs. "Vault" promise ✅ RESOLVED
+**Was:** User is told credentials are stored in a secure vault; they're actually in a plaintext `.env` file. New users have no 1Password/PAP Vault.
+**Resolution (2026-06-16, ONBOARD-VAULT-SETUP-001):**
+- Cowork install prompt Step A2.5 now guides users through 1Password installation + vault creation before any credential collection
+- `setup-headless.sh` reads `USE_VAULT` from setup-config.txt; if yes + `op` signed in, stores HELM Bot Token and GitHub PAT to 1Password vault "HELM"
+- `.env` still receives credentials as a runtime copy (bot.js reads dotenv — vault is the durable source)
+- Users who skip vault get honest wording: "stored in a file only your Mac user account can open"
+- New users are no longer required to have {{USER_JERRY}}'s pre-existing vault setup
 
 ### G-D: Onboarding resume not verified
 **Risk:** If a user's install is interrupted, they may restart from zero — losing progress and getting confused.  

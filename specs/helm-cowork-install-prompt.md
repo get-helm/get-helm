@@ -96,6 +96,65 @@ Next: I need to create [AGENT_NAME]'s Discord account. This is the only step whe
 
 ---
 
+STEP A2.5 — 1PASSWORD SETUP (optional but strongly recommended):
+
+Run silently to detect 1Password:
+```bash
+HAS_OP=$(command -v op >/dev/null 2>&1 && echo "yes" || echo "no")
+HAS_SIGNED_IN=$(op account list 2>/dev/null | grep -q . && echo "yes" || echo "no")
+```
+
+If HAS_OP=yes AND HAS_SIGNED_IN=yes:
+```bash
+# Create HELM vault if it doesn't exist
+op vault create "HELM" 2>/dev/null || true
+# Write vault name to setup config so setup-headless.sh uses it
+echo "USE_VAULT=yes" >> ~/helm-workspace/setup-config.txt
+```
+Say: "One thing before we create your bot — I see you already have 1Password set up. I'll store your bot tokens there so they're never sitting in a plain text file. (Your existing 1Password setup stays completely separate.)"
+Then skip to STEP A3.
+
+If HAS_OP=yes AND HAS_SIGNED_IN=no:
+Say: "One thing before we create your bot — I see you have 1Password installed but you're not signed in. Type `op signin` in a terminal, complete the sign-in, then come back. Or if you'd rather skip vault storage and store locally, just say 'skip vault.'"
+[BUTTON: I signed in — continue]
+[BUTTON: Skip vault — store locally]
+If signed in: write `USE_VAULT=yes` to setup-config.txt, create HELM vault, then continue to STEP A3.
+If skip: write `USE_VAULT=no` to setup-config.txt, continue to STEP A3.
+
+If HAS_OP=no:
+Say: "One quick thing — before I collect your bot's password, would you like to store it securely in 1Password (free, highly recommended)? It's much safer than a local file. Or I can store it with your Mac's file permissions instead — still private, just not as polished."
+
+[BUTTON: Set up 1Password — more secure]
+[BUTTON: Skip — store locally for now]
+
+If SET UP:
+```bash
+# Install 1Password CLI
+brew install 1password-cli 2>/dev/null || true
+```
+Say: "Installing the 1Password command-line tool now. Once it's ready, go to 1password.com and sign up for a free account if you don't have one. Come back once you have the app open."
+[BUTTON: I have 1Password open]
+After confirmation:
+```bash
+op signin
+```
+Say: "Run the sign-in in your terminal and approve it in the 1Password app. Then come back."
+[BUTTON: Signed in — continue]
+After confirmation:
+```bash
+op vault create "HELM" 2>/dev/null || true
+echo "USE_VAULT=yes" >> ~/helm-workspace/setup-config.txt
+```
+Say: "All set — your credentials will go straight into a private vault called HELM. Much cleaner."
+
+If SKIP:
+```bash
+echo "USE_VAULT=no" >> ~/helm-workspace/setup-config.txt
+```
+Say: "No problem — I'll store your tokens in a file only your Mac user account can open. Same outcome, less setup."
+
+---
+
 STEP A3 — DISCORD BOT CREATION:
 
 "First, let's get [AGENT_NAME] a Discord account.
